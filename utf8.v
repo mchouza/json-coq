@@ -159,23 +159,24 @@ Definition _aux_enc_cp_byte cp hi lo :=
   ascii_of_N (Z.to_N (128 + Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1))).
 
 Definition _encode_codepoint cp :=
-  match (Z_le_dec cp U+"7F"), (Z_le_dec cp U+"7FF"), (Z_le_dec cp U+"FFFF"),
-        (Z_le_dec cp U+"10FFFF") with
-  | left _, _, _, _ =>
+  match (Z_lt_dec cp 0), (Z_le_dec cp U+"7F"), (Z_le_dec cp U+"7FF"),
+        (Z_le_dec cp U+"FFFF"), (Z_le_dec cp U+"10FFFF") with
+  | left _, _, _, _, _ => None
+  | _, left _, _, _, _ =>
       Some (String (ascii_of_N (Z.to_N cp)) "")
-  | _, left _, _, _ =>
+  | _, _, left _, _, _ =>
       Some (String (_aux_enc_cp_byte cp 10 6) 
            (String (_aux_enc_cp_byte cp 5 0) ""))
-  | _, _, left _, _ =>
+  | _, _, _, left _, _ =>
       Some (String (_aux_enc_cp_byte cp 15 12)
            (String (_aux_enc_cp_byte cp 11 6)
            (String (_aux_enc_cp_byte cp 5 0) "")))
-  | _, _, _, left _ =>
+  | _, _, _, _, left _ =>
       Some (String (_aux_enc_cp_byte cp 20 18)
            (String (_aux_enc_cp_byte cp 17 12)
            (String (_aux_enc_cp_byte cp 11 6)
            (String (_aux_enc_cp_byte cp 5 0) ""))))
-  | _, _, _, _ => None
+  | _, _, _, _, _ => None
   end.
 
 Fixpoint utf8_encode (l:list Z) :=
@@ -187,3 +188,72 @@ Fixpoint utf8_encode (l:list Z) :=
       | _, _ => None
       end
   end.
+
+Inductive is_valid_unicode: list Z -> Prop :=
+  | ivu_empty: is_valid_unicode nil
+  | ivu_cons: forall c l, 0 <= c <= U+"10FFFF" -> is_valid_unicode l -> is_valid_unicode (c :: l).
+
+Lemma valid_cp_is_encoded:
+  forall cp, 0 <= cp <= U+"10FFFF" <-> exists s, _encode_codepoint cp = Some s.
+Proof.
+  split.
+  {
+    intros cp_bounds.
+    assert (forall s':string, exists s, Some s' = Some s) as ex_eq by (intros; exists s'; auto).
+    unfold _encode_codepoint.
+    destruct (Z_lt_dec cp 0); try omega.
+    destruct (Z_le_dec cp U+"7F"); try apply ex_eq.
+    destruct (Z_le_dec cp U+"7FF"); try apply ex_eq.
+    destruct (Z_le_dec cp U+"FFFF"); try apply ex_eq.
+    destruct (Z_le_dec cp U+"10FFFF"); try apply ex_eq.
+    omega.
+  }
+  {
+    intros [s cp_eq].
+    unfold _encode_codepoint in cp_eq.
+    destruct (Z_lt_dec cp 0); try discriminate cp_eq.
+    destruct (Z_le_dec cp U+"7F"); try (unfold "U+" in *; simpl in *; omega).
+    destruct (Z_le_dec cp U+"7FF"); try (unfold "U+" in *; simpl in *; omega).
+    destruct (Z_le_dec cp U+"FFFF"); try (unfold "U+" in *; simpl in *; omega).
+    destruct (Z_le_dec cp U+"10FFFF"); try (unfold "U+" in *; simpl in *; omega).
+    discriminate cp_eq.
+  }
+Qed.
+
+Theorem valid_unicode_is_encoded:
+  forall l, is_valid_unicode l <-> exists s, utf8_encode l = Some s.
+Proof.
+  split.
+  {
+    intros ivu_l.
+    induction ivu_l.
+    + exists ""; auto.
+    + destruct IHivu_l as [s' l_enc_eq].
+      assert (exists s'', _encode_codepoint c = Some s'') as [s'' c_enc_eq]
+        by (apply valid_cp_is_encoded; auto).
+      simpl; rewrite c_enc_eq, l_enc_eq.
+      exists (s'' ++ s'); auto.
+  }
+  {
+    induction l.
+    + constructor.
+    + intros [s a_l_enc_eq]; constructor.
+      - simpl utf8_encode in a_l_enc_eq.
+        apply valid_cp_is_encoded.
+        destruct (_encode_codepoint a).
+        * exists s0; auto.
+        * discriminate.
+      - apply IHl.
+        simpl utf8_encode in a_l_enc_eq.
+        destruct (utf8_encode l).
+        * exists s0; auto.
+        * destruct (_encode_codepoint a); discriminate.
+  }
+Qed.
+
+Theorem decode_enc_eq:
+  forall l,
+  is_valid_unicode l -> exists s,
+  utf8_encode l = Some s /\ utf8_decode s = Some l.
+Proof.
+Admitted. (** FIXME **)
