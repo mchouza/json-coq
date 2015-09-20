@@ -1,6 +1,7 @@
 Require Import Ascii.
 Require Import List.
 Require Import String.
+Require Import Program.
 Require Import ZArith.
 
 (** Unicode codepoint literal support, based on
@@ -105,5 +106,84 @@ Qed.
 
 (** UTF-8 decoding support **)
 
-Definition utf8_char_decode c n :=
+Definition _get_lo_bits c n :=
   Z.land (Z.of_N (N_of_ascii c)) ((Z.shiftl 1 n) - 1).
+
+Definition _read_head_byte c :=
+  match c with
+  | Ascii _ _ _ _ _ _ _ false => Some ((_get_lo_bits c 7), 0%nat) 
+  | Ascii _ _ _ _ _ false true true => Some ((_get_lo_bits c 5), 1%nat)
+  | Ascii _ _ _ _ false true true true => Some ((_get_lo_bits c 4), 2%nat)
+  | Ascii _ _ _ false true true true true => Some ((_get_lo_bits c 3), 3%nat)
+  | _ => None
+  end.
+
+Fixpoint _decode_codepoint (acc:Z) (s:string) (n:nat) :=
+  match n with
+  | O => Some (acc, s)
+  | S m =>
+      match s with
+      | String c s' =>
+          match c with
+          | Ascii _ _ _ _ _ _ false true =>
+              _decode_codepoint ((Z.shiftl acc 6) + (_get_lo_bits c 6)) s' m
+          | _ => None
+          end
+      | _ => None
+      end
+  end.
+
+Fixpoint _utf8_decode_aux s dummy :=
+  match s, dummy with
+  | "", _ => Some nil
+  | String c s', S m =>
+      match _read_head_byte c with
+      | Some (acc, n) =>
+          match _decode_codepoint acc s' n with
+          | Some (acc, s'') =>
+              match _utf8_decode_aux s'' m with
+              | Some l => Some (acc :: l)
+              | _ => None
+              end
+          | _ => None
+          end
+      | _ => None
+      end
+  | _, _ => None
+  end.
+
+Definition utf8_decode (s:string): option (list Z) :=
+  _utf8_decode_aux s (length s).
+
+Definition _aux_enc_cp_byte cp hi lo :=
+  ascii_of_N (Z.to_N (128 + Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1))).
+
+Definition _encode_codepoint cp :=
+  match (Z_le_dec cp U+"7F"), (Z_le_dec cp U+"7FF"), (Z_le_dec cp U+"FFFF"),
+        (Z_le_dec cp U+"10FFFF") with
+  | left _, _, _, _ =>
+      Some (String (ascii_of_N (Z.to_N cp)) "")
+  | _, left _, _, _ =>
+      Some (String (_aux_enc_cp_byte cp 10 6) 
+           (String (_aux_enc_cp_byte cp 5 0) ""))
+  | _, _, left _, _ =>
+      Some (String (_aux_enc_cp_byte cp 15 12)
+           (String (_aux_enc_cp_byte cp 11 6)
+           (String (_aux_enc_cp_byte cp 5 0) "")))
+  | _, _, _, left _ =>
+      Some (String (_aux_enc_cp_byte cp 20 18)
+           (String (_aux_enc_cp_byte cp 17 12)
+           (String (_aux_enc_cp_byte cp 11 6)
+           (String (_aux_enc_cp_byte cp 5 0) ""))))
+  | _, _, _, _ => None
+  end.
+
+Fixpoint utf8_encode (l:list Z) :=
+  match l with
+  | nil => Some ""
+  | cp :: l' =>
+      match _encode_codepoint cp, utf8_encode l' with
+      | Some s, Some s' => Some (s ++ s')
+      | _, _ => None
+      end
+  end.
