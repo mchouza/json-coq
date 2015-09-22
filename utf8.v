@@ -155,8 +155,10 @@ Fixpoint _utf8_decode_aux s dummy :=
 Definition utf8_decode (s:string): option (list Z) :=
   _utf8_decode_aux s (length s).
 
-Definition _aux_enc_cp_byte cp hi lo :=
-  ascii_of_N (Z.to_N (128 + Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1))).
+(** UTF-8 encoding support **)
+
+Definition _aux_enc_cp_byte cp hi lo offset :=
+  ascii_of_N (Z.to_N (Z.lor offset (Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1)))).
 
 Definition _encode_codepoint cp :=
   match (Z_lt_dec cp 0), (Z_le_dec cp U+"7F"), (Z_le_dec cp U+"7FF"),
@@ -165,17 +167,17 @@ Definition _encode_codepoint cp :=
   | _, left _, _, _, _ =>
       Some (String (ascii_of_N (Z.to_N cp)) "")
   | _, _, left _, _, _ =>
-      Some (String (_aux_enc_cp_byte cp 10 6) 
-           (String (_aux_enc_cp_byte cp 5 0) ""))
+      Some (String (_aux_enc_cp_byte cp 10 6 U+"C0") 
+           (String (_aux_enc_cp_byte cp 5 0 U+"80") ""))
   | _, _, _, left _, _ =>
-      Some (String (_aux_enc_cp_byte cp 15 12)
-           (String (_aux_enc_cp_byte cp 11 6)
-           (String (_aux_enc_cp_byte cp 5 0) "")))
+      Some (String (_aux_enc_cp_byte cp 15 12 U+"E0")
+           (String (_aux_enc_cp_byte cp 11 6 U+"80")
+           (String (_aux_enc_cp_byte cp 5 0 U+"80") "")))
   | _, _, _, _, left _ =>
-      Some (String (_aux_enc_cp_byte cp 20 18)
-           (String (_aux_enc_cp_byte cp 17 12)
-           (String (_aux_enc_cp_byte cp 11 6)
-           (String (_aux_enc_cp_byte cp 5 0) ""))))
+      Some (String (_aux_enc_cp_byte cp 20 18 U+"F0")
+           (String (_aux_enc_cp_byte cp 17 12 U+"80")
+           (String (_aux_enc_cp_byte cp 11 6 U+"80")
+           (String (_aux_enc_cp_byte cp 5 0 U+"80") ""))))
   | _, _, _, _, _ => None
   end.
 
@@ -251,9 +253,20 @@ Proof.
   }
 Qed.
 
+Lemma pos_add_carry_bound:
+  forall p q, Z.pos (Pos.add p q)~1 < Z.pos (Pos.add_carry p q)~0.
+Proof.
+  intros.
+  rewrite Pos.add_carry_spec, Pos.xI_succ_xO.
+  repeat rewrite <-Pos.add_1_r.
+  repeat rewrite Pos.add_xO.
+  repeat rewrite Pos2Z.inj_add.
+  omega.
+Qed.
+
 Theorem decode_enc_eq:
   forall l,
-  is_valid_unicode l -> exists s,
-  utf8_encode l = Some s /\ utf8_decode s = Some l.
+  is_valid_unicode l ->
+  exists s, utf8_encode l = Some s /\ utf8_decode s = Some l.
 Proof.
 Admitted. (** FIXME **)
