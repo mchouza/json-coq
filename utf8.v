@@ -102,6 +102,61 @@ Proof.
   auto.
 Qed.
 
+(** Arithmetical bounds for bitwise ops **)
+
+Lemma pos_lor_lower_bound:
+  forall p q, (p <= Pos.lor p q)%positive.
+Proof.
+  assert (forall p c, Pos.compare_cont p p c = c) as p_p_keeps by
+    (induction p; simpl; auto).
+  unfold "<="%positive, "?="%positive.
+  induction p.
+  + simpl; destruct q; simpl; try apply IHp.
+    rewrite p_p_keeps; discriminate.
+  + simpl; destruct q; simpl; try apply IHp.
+    - rewrite Pos.compare_cont_spec.
+      specialize IHp with (q := q).
+      unfold "?="%positive; destruct Pos.compare_cont; simpl; auto.
+      discriminate.
+    - rewrite p_p_keeps; discriminate.
+  + destruct q; simpl; discriminate.
+Qed.
+
+Lemma pos_lor_higher_bound:
+  forall p q, (Pos.lor p q <= p + q)%positive.
+Proof.
+  assert (forall p c, Pos.compare_cont p p c = c) as p_p_keeps by
+    (induction p; simpl; auto).
+  assert (forall p c, Pos.compare_cont p (Pos.succ p) c = Lt) as p_lt_succ by
+    (induction p; simpl; auto).
+  unfold "<="%positive, "?="%positive.
+  induction p; destruct q; simpl; try apply IHp.
+  + admit. (** FIXME **)
+  + rewrite p_lt_succ; discriminate.
+  + rewrite p_p_keeps; discriminate.
+  + rewrite p_lt_succ; discriminate.
+  + rewrite p_p_keeps; discriminate.
+  + discriminate.
+Qed.
+
+Lemma lor_bounds:
+  forall a b, 0 <= a -> 0 <= b -> a <= Z.lor a b <= a + b.
+Proof.
+  intros a b a_ge_0 b_ge_0.
+  (* just tries all possible constructors *)
+  destruct a, b.
+  + auto.
+  + simpl; omega.
+  + simpl; omega.
+  + simpl; omega.
+  + (* only nontrivial case *)
+    split; [apply pos_lor_lower_bound | apply pos_lor_higher_bound].
+  + unfold "<=" in *; simpl in *; auto.
+  + unfold "<=" in *; simpl in *; auto.
+  + unfold "<=" in *; simpl in *; auto.
+  + unfold "<=" in *; simpl in *; auto.
+Qed.
+
 (** UTF-8 description based on https://tools.ietf.org/html/rfc3629#section-3 **)
 
 (** UTF-8 decoding support **)
