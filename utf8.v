@@ -122,6 +122,12 @@ Proof.
   + destruct q; simpl; discriminate.
 Qed.
 
+Lemma switch_Eq_Eq:
+  forall c, Pos.switch_Eq Eq c = c.
+Proof.
+  destruct c; simpl; auto.
+Qed.
+
 Lemma pos_lor_higher_bound:
   forall p q, (Pos.lor p q <= p + q)%positive.
 Proof.
@@ -131,7 +137,12 @@ Proof.
     (induction p; simpl; auto).
   unfold "<="%positive, "?="%positive.
   induction p; destruct q; simpl; try apply IHp.
-  + admit. (** FIXME **)
+  + specialize IHp with (q := q).
+    rewrite Pos.add_carry_spec, Pos.compare_cont_spec in *.
+    rewrite switch_Eq_Eq in IHp.
+    remember (Pos.lor p q ?= p + q)%positive as lor_sum_cmp.
+    destruct lor_sum_cmp; try (rewrite Pos.compare_succ_r, <-Heqlor_sum_cmp; simpl; discriminate).
+    exfalso; apply IHp; auto.
   + rewrite p_lt_succ; discriminate.
   + rewrite p_p_keeps; discriminate.
   + rewrite p_lt_succ; discriminate.
