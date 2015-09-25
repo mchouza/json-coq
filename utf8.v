@@ -168,6 +168,55 @@ Proof.
   + unfold "<=" in *; simpl in *; auto.
 Qed.
 
+Lemma Ndouble_inj_le:
+  forall m n, (n <= m -> Pos.Ndouble n <= Pos.Ndouble m)%N.
+Proof.
+  destruct n, m; simpl; auto.
+Qed.
+
+Lemma Nsucc_double_inj_le:
+  forall m n, (n <= m -> Pos.Nsucc_double n <= Pos.Nsucc_double m)%N.
+Proof.
+  destruct n, m; simpl; auto.
+Qed.
+
+Lemma pos_land_bound:
+  forall p q, (0 <= Pos.land p q <= N.pos p)%N.
+Proof.
+  assert (forall p, N.pos p~0 = Pos.Ndouble (N.pos p)) as Ndouble_eq by auto.
+  assert (forall p, N.pos p~1 = Pos.Nsucc_double (N.pos p)) as Nsucc_double_eq by auto.
+  induction p; destruct q; simpl; try (split; discriminate).
+  + rewrite Nsucc_double_eq; split.
+    - case (Pos.land p q); unfold "<="%N; discriminate.
+    - apply Nsucc_double_inj_le, IHp.
+  + rewrite Nsucc_double_eq; split.
+    - case (Pos.land p q); discriminate.
+    - apply N.le_trans with (m := Pos.Ndouble (N.pos p)).
+      * apply Ndouble_inj_le, IHp.
+      * unfold "<="%N, "?="%N, "?="%positive; simpl.
+        rewrite Pos.compare_cont_refl; discriminate.
+  + rewrite Ndouble_eq; split.
+    - case (Pos.land p q); discriminate.
+    - apply Ndouble_inj_le, IHp.
+  + rewrite Ndouble_eq; split.
+    - case (Pos.land p q); discriminate.
+    - apply Ndouble_inj_le, IHp.
+Qed.
+
+Lemma land_bounds:
+  forall a b, 0 <= a -> 0 <= b -> 0 <= Z.land a b <= a.
+Proof.
+  (* just tries all combinations, previously removing those automatically solved *)
+  intros; destruct a, b; auto.
+  + (* only nontrivial case *)
+    unfold Z.land; rewrite <-N2Z.inj_0, <-N2Z.inj_pos.
+    do 2 rewrite <-N2Z.inj_le.
+    apply pos_land_bound.
+  + unfold "<=" in *; simpl in *; auto.
+  + unfold "<=" in *; simpl in *; auto.
+  + unfold "<=" in *; simpl in *; auto.
+Qed.
+
 (** UTF-8 description based on https://tools.ietf.org/html/rfc3629#section-3 **)
 
 (** UTF-8 decoding support **)
