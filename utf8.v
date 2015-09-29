@@ -217,6 +217,73 @@ Proof.
   + unfold "<=" in *; simpl in *; auto.
 Qed.
 
+(** ASCII bits access **)
+
+Lemma Zlength_cons {A}: forall (a:A) l, Zlength (a :: l) = Zlength l + 1.
+Proof.
+  intros; repeat rewrite Zlength_correct; simpl Datatypes.length.
+  rewrite <-plus_0_r with (n := S (Datatypes.length l)), plus_Sn_m, plus_n_Sm.
+  rewrite Nat2Z.inj_add; auto.
+Qed.
+
+Lemma testbit_N_of_digits:
+  forall l n d, 
+  0 <= n < Zlength l ->
+  Z.testbit (Z.of_N (N_of_digits l)) n = nth (Z.to_nat n) l d.
+Proof.
+  induction l.
+  {
+    unfold Zlength; simpl; intros; omega.
+  }
+  {
+    intros n d n_bounds.
+    destruct (Z_eq_dec n 0).
+    + rewrite e; unfold N_of_digits; fold N_of_digits; destruct a.
+      - rewrite N.add_comm, N2Z.inj_add, N2Z.inj_mul; simpl Z.of_N; simpl Z.to_nat.
+        rewrite Z.testbit_odd_0; simpl nth; auto.
+      - rewrite N.add_0_l, N2Z.inj_mul; simpl Z.of_N; simpl Z.to_nat.
+        rewrite Z.testbit_even_0; simpl nth; auto.
+    + assert (n = n - 1 + 1) as n_eq by omega.
+      assert (Z.to_nat 1 = 1%nat) as one_eq by (simpl; auto).
+      assert (forall k, k >= 0 -> Z.to_nat (k + 1) = S (Z.to_nat k)) as S_eq
+        by (intros; rewrite Z2Nat.inj_add, one_eq, <-plus_n_Sm by omega; omega).
+      rewrite <-Z2N.id with (n := n) at 1 by omega.
+      rewrite N2Z.inj_testbit, n_eq, Z2N.inj_add by omega; simpl Z.to_N.
+      unfold N_of_digits; fold N_of_digits.
+      rewrite S_eq with (k := n - 1) by omega.
+      rewrite N.add_1_r.
+      rewrite Zlength_cons in n_bounds.
+      simpl nth; destruct a.
+      - rewrite N.add_comm, N.testbit_odd_succ, <-Z2N.inj_testbit.
+        * apply IHl; omega.
+        * omega.
+        * rewrite <-N2Z.id with (n := 0%N), <-Z2N.inj_le; simpl; omega.
+      - rewrite N.add_0_l, N.testbit_even_succ, <-Z2N.inj_testbit.
+        * apply IHl; omega.
+        * omega.
+        * rewrite <-N2Z.id with (n := 0%N), <-Z2N.inj_le; simpl; omega.
+  }
+Qed.
+
+Lemma ascii_bits: 
+  forall c b0 b1 b2 b3 b4 b5 b6 b7 a,
+  c = Ascii b0 b1 b2 b3 b4 b5 b6 b7 ->
+  a = Z.of_N (N_of_ascii c) ->
+  Z.testbit a 0 = b0 /\
+  Z.testbit a 1 = b1 /\
+  Z.testbit a 2 = b2 /\
+  Z.testbit a 3 = b3 /\
+  Z.testbit a 4 = b4 /\
+  Z.testbit a 5 = b5 /\
+  Z.testbit a 6 = b6 /\
+  Z.testbit a 7 = b7.
+Proof.
+  intros c b0 b1 b2 b3 b4 b5 b6 b7 a c_eq a_eq.
+  rewrite a_eq, c_eq; unfold N_of_ascii; repeat split;
+  rewrite testbit_N_of_digits with (d := false) by (rewrite Zlength_correct; simpl; omega);
+  auto.
+Qed.
+
 (** UTF-8 description based on https://tools.ietf.org/html/rfc3629#section-3 **)
 
 (** UTF-8 decoding support **)
@@ -337,6 +404,19 @@ Proof.
   }
 Qed.
 
+Lemma valid_cp_encoding_is_not_nil:
+  forall cp s, _encode_codepoint cp = Some s -> 1 <= Z.of_nat (length s) <= 4.
+Proof.
+  intros cp s cp_eq.
+  unfold _encode_codepoint in cp_eq.
+  destruct (Z_lt_dec cp 0). discriminate.
+  destruct (Z_le_dec cp U+"7F"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
+  destruct (Z_le_dec cp U+"7FF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
+  destruct (Z_le_dec cp U+"FFFF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
+  destruct (Z_le_dec cp U+"10FFFF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
+  discriminate.
+Qed.
+
 Theorem valid_unicode_is_encoded:
   forall l, is_valid_unicode l <-> exists s, utf8_encode l = Some s.
 Proof.
@@ -368,20 +448,46 @@ Proof.
   }
 Qed.
 
-Lemma pos_add_carry_bound:
-  forall p q, Z.pos (Pos.add p q)~1 < Z.pos (Pos.add_carry p q)~0.
+Lemma read_head_byte_works:
+  forall cp,
+  is_valid_unicode (cp :: nil) ->
+  exists c, exists s, _encode_codepoint cp = Some (String c s) /\
+  exists d, _read_head_byte c = Some (d, length s).
 Proof.
-  intros.
-  rewrite Pos.add_carry_spec, Pos.xI_succ_xO.
-  repeat rewrite <-Pos.add_1_r.
-  repeat rewrite Pos.add_xO.
-  repeat rewrite Pos2Z.inj_add.
-  omega.
+  intros cp cp_is_valid.
+  assert (0 <= cp <= U+"10FFFF") as cp_bounds by (inversion cp_is_valid; auto).
+  assert (exists s', _encode_codepoint cp = Some s') as [s' enc_cp]
+    by (apply valid_cp_is_encoded; auto).
+  destruct s' as [|c s].
+  + assert (1 <= Z.of_nat (length "") <= 4)
+      by (apply valid_cp_encoding_is_not_nil with (cp := cp); auto).
+    simpl in *; omega.
+  + exists c s; split.
+    - auto.
+    - admit. (** FIXME **)
 Qed.
+
+Lemma cp_enc_dec_eq:
+  forall cp,
+  is_valid_unicode (cp :: nil) ->
+  exists s, _encode_codepoint cp = Some s /\
+  utf8_decode s = Some (cp :: nil).
+Proof.
+Admitted. (** FIXME **)
 
 Theorem decode_enc_eq:
   forall l,
   is_valid_unicode l ->
   exists s, utf8_encode l = Some s /\ utf8_decode s = Some l.
 Proof.
-Admitted. (** FIXME **)
+  induction l.
+  + intros; exists ""; auto.
+  + intros ivu_a_l; inversion ivu_a_l.
+    assert (exists s, utf8_encode l = Some s /\ utf8_decode s = Some l) as
+      [s [enc_eq dec_eq]] by (apply IHl; auto).
+    assert (exists s, _encode_codepoint a = Some s /\ utf8_decode s = Some (a :: nil)) as
+      [sa [a_enc_eq a_dec_eq]] by (apply cp_enc_dec_eq; constructor; auto; constructor).
+    exists (sa ++ s); simpl.
+    rewrite enc_eq, a_enc_eq; split; auto.
+    admit. (** FIXME **)
+Qed.
