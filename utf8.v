@@ -217,6 +217,49 @@ Proof.
   + unfold "<=" in *; simpl in *; auto.
 Qed.
 
+Lemma adding_bit_makes_bigger:
+  forall p, (p < p~0 /\ p < p~1)%positive.
+Proof.
+  cut (forall p c, Pos.compare_cont p p~0 c = Lt /\ Pos.compare_cont p p~1 c = Lt).
+  {
+    unfold "<"%positive, "?="%positive; auto.
+  }
+  induction p.
+  + simpl; intros; split; apply IHp.
+  + simpl; intros; split; apply IHp.
+  + simpl; auto.
+Qed.
+
+Lemma div2_smaller: forall a, a >= 0 -> Z.div2 a <= a.
+Proof.
+  assert (forall p, p < p~0 /\ p < p~1)%positive as Habmb by apply adding_bit_makes_bigger.
+  unfold "<"%positive in *.
+  intros a a_ge_0; unfold Z.div2; destruct a.
+  + omega.
+  + destruct p; simpl; unfold "<="; 
+    try rewrite Z2Pos.inj_compare by (unfold "<"; auto); simpl.
+    - destruct (Habmb p) as [_ H]; rewrite H; discriminate.
+    - destruct (Habmb p) as [H _]; rewrite H; discriminate.
+    - discriminate.
+  + unfold ">=" in *; simpl in *; exfalso; apply a_ge_0; auto.
+Qed.
+
+Lemma shiftr_bounds:
+  forall a n,
+  a >= 0 ->
+  n >= 0 ->
+  Z.shiftr a n <= a.
+Proof.
+  unfold Z.shiftr, Z.shiftl; intros a n n_ge_0.
+  destruct n; simpl.
+  + omega.
+  + intros _; induction p; simpl.
+    - admit. (** FIXME **)
+    - admit. (** FIXME **)
+    - apply div2_smaller; auto.
+  + intros Habs; unfold ">=" in *; simpl in *; exfalso; apply Habs; auto.
+Qed.
+
 (** ASCII bits access **)
 
 Lemma Zlength_cons {A}: forall (a:A) l, Zlength (a :: l) = Zlength l + 1.
@@ -446,6 +489,29 @@ Proof.
         * exists s0; auto.
         * destruct (_encode_codepoint a); discriminate.
   }
+Qed.
+
+Lemma aux_enc_cp_bound:
+  forall cp hi lo off,
+  off >= 0 ->
+  off + Z.shiftl 1 (hi - lo + 1) < 256 ->
+  off <= Z_of_N (N_of_ascii (_aux_enc_cp_byte cp hi lo off)) < off + Z.shiftl 1 (hi - lo + 1).
+Proof.
+  intros; unfold _aux_enc_cp_byte.
+  cut (off <= Z.lor off (Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1)) <=
+       off + (Z.shiftl 1 (hi - lo + 1) - 1)).
+  {
+    intros Hinner.
+    rewrite N_ascii_embedding, Z2N.id.
+    + omega.
+    + apply Zle_trans with (m := off).
+      - omega.
+      - apply lor_bounds; try omega; apply land_bounds.
+        * admit. (** FIXME **)
+        * admit. (** FIXME **)
+    + admit. (** FIXME **)
+  } 
+  admit. (** FIXME **)
 Qed.
 
 Lemma read_head_byte_works:
