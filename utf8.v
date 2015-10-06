@@ -217,47 +217,28 @@ Proof.
   + unfold "<=" in *; simpl in *; auto.
 Qed.
 
-Lemma adding_bit_makes_bigger:
-  forall p, (p < p~0 /\ p < p~1)%positive.
+Lemma shiftl_ge_0: forall a n, a >= 0 -> Z.shiftl a n >= 0.
 Proof.
-  cut (forall p c, Pos.compare_cont p p~0 c = Lt /\ Pos.compare_cont p p~1 c = Lt).
-  {
-    unfold "<"%positive, "?="%positive; auto.
-  }
-  induction p.
-  + simpl; intros; split; apply IHp.
-  + simpl; intros; split; apply IHp.
-  + simpl; auto.
+  intros a n a_ge_0; unfold Z.shiftl; destruct n.
+  + auto.
+  + apply Pos.iter_invariant; auto.
+    unfold ">="; destruct x; simpl; auto.
+  + apply Pos.iter_invariant; auto.
+    unfold ">="; destruct x; try case p0; simpl; auto; discriminate.
 Qed.
 
-Lemma div2_smaller: forall a, a >= 0 -> Z.div2 a <= a.
+Lemma shiftr_ge_0: forall a n, a >= 0 -> Z.shiftr a n >= 0.
 Proof.
-  assert (forall p, p < p~0 /\ p < p~1)%positive as Habmb by apply adding_bit_makes_bigger.
-  unfold "<"%positive in *.
-  intros a a_ge_0; unfold Z.div2; destruct a.
-  + omega.
-  + destruct p; simpl; unfold "<="; 
-    try rewrite Z2Pos.inj_compare by (unfold "<"; auto); simpl.
-    - destruct (Habmb p) as [_ H]; rewrite H; discriminate.
-    - destruct (Habmb p) as [H _]; rewrite H; discriminate.
-    - discriminate.
-  + unfold ">=" in *; simpl in *; exfalso; apply a_ge_0; auto.
+  unfold Z.shiftr; intros; apply shiftl_ge_0; auto.
 Qed.
 
-Lemma shiftr_bounds:
-  forall a n,
-  a >= 0 ->
-  n >= 0 ->
-  Z.shiftr a n <= a.
+Lemma shiftl_pos: forall a n, a > 0 -> n >= 0 -> Z.shiftl a n > 0.
 Proof.
-  unfold Z.shiftr, Z.shiftl; intros a n n_ge_0.
-  destruct n; simpl.
-  + omega.
-  + intros _; induction p; simpl.
-    - admit. (** FIXME **)
-    - admit. (** FIXME **)
-    - apply div2_smaller; auto.
-  + intros Habs; unfold ">=" in *; simpl in *; exfalso; apply Habs; auto.
+  intros a n a_pos n_ge_0; unfold Z.shiftl; destruct n.
+  + auto.
+  + apply Pos.iter_invariant; auto.
+    intros x; unfold ">"; destruct x; simpl; auto.
+  + unfold ">=" in *; simpl in *; exfalso; apply n_ge_0; auto.
 Qed.
 
 (** ASCII bits access **)
@@ -493,26 +474,32 @@ Qed.
 
 Lemma aux_enc_cp_bound:
   forall cp hi lo off,
+  cp >= 0 ->
   off >= 0 ->
+  hi - lo + 1 > 0 ->
   off + Z.shiftl 1 (hi - lo + 1) < 256 ->
   off <= Z_of_N (N_of_ascii (_aux_enc_cp_byte cp hi lo off)) < off + Z.shiftl 1 (hi - lo + 1).
 Proof.
   intros; unfold _aux_enc_cp_byte.
-  cut (off <= Z.lor off (Z.land (Z.shiftr cp lo) ((Z.shiftl 1 (hi - lo + 1)) - 1)) <=
-       off + (Z.shiftl 1 (hi - lo + 1) - 1)).
+  assert (Z.shiftr cp lo >= 0) by (apply shiftr_ge_0; auto).
+  assert (Z.shiftl 1 (hi - lo + 1) > 0) by (apply shiftl_pos; omega).
+  assert (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1) <= (Z.shiftl 1 (hi - lo + 1) - 1))
+    by (rewrite Z.land_comm; apply land_bounds; omega).
+  assert (off <= Z.lor off (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1)))
+    by (apply lor_bounds; try omega; apply land_bounds; omega).
+  assert (Z.lor off (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1)) <
+          off + Z.shiftl 1 (hi - lo + 1)).
   {
-    intros Hinner.
-    rewrite N_ascii_embedding, Z2N.id.
+    apply Z.le_lt_trans with (m := off + (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1))).
+    + apply lor_bounds; try omega.
+      apply land_bounds; omega.
     + omega.
-    + apply Zle_trans with (m := off).
-      - omega.
-      - apply lor_bounds; try omega; apply land_bounds.
-        * admit. (** FIXME **)
-        * admit. (** FIXME **)
-    + admit. (** FIXME **)
-  } 
-  admit. (** FIXME **)
-Qed.
+  }
+  rewrite N_ascii_embedding, Z2N.id.
+  + omega.
+  + omega.
+  + rewrite N2Z.inj_lt, Z2N.id by omega; simpl; omega.
+Qed. 
 
 Lemma read_head_byte_works:
   forall cp,
