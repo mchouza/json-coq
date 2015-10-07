@@ -324,7 +324,7 @@ Definition _read_head_byte c :=
   | _ => None
   end.
 
-Fixpoint _decode_codepoint (acc:Z) (s:string) (n:nat) :=
+Fixpoint _decode_codepoint (acc:Z) (s:string) (n:nat) {struct n} :=
   match n with
   | O => Some (acc, s)
   | S m =>
@@ -501,25 +501,52 @@ Proof.
   + rewrite N2Z.inj_lt, Z2N.id by omega; simpl; omega.
 Qed. 
 
-Lemma read_head_byte_works:
-  forall cp,
-  is_valid_unicode (cp :: nil) ->
-  exists c, exists s, _encode_codepoint cp = Some (String c s) /\
-  exists d, _read_head_byte c = Some (d, length s).
+Lemma decode_codepoint_lengths:
+  forall n acc s acc' s',
+  _decode_codepoint acc s n = Some (acc', s') ->
+  (length s = n + length s')%nat.
 Proof.
-  intros cp cp_is_valid.
-  assert (0 <= cp <= U+"10FFFF") as cp_bounds by (inversion cp_is_valid; auto).
-  assert (exists s', _encode_codepoint cp = Some s') as [s' enc_cp]
-    by (apply valid_cp_is_encoded; auto).
-  destruct s' as [|c s].
-  + assert (1 <= Z.of_nat (length "") <= 4)
-      by (apply valid_cp_encoding_is_not_nil with (cp := cp); auto).
-    simpl in *; omega.
-  + exists c s; split.
-    - auto.
-    - admit. (** FIXME **)
+  induction n.
+  + intros acc s acc' s' dc_eq; inversion dc_eq; subst s; auto.
+  + intros acc s acc' s' dc_eq.
+    unfold _decode_codepoint in dc_eq; fold _decode_codepoint in dc_eq.
+    destruct s. discriminate.
+    remember (_decode_codepoint (Z.shiftl acc 6 + _get_lo_bits a 6) s n) as inner_dc.
+    destruct inner_dc.
+    - destruct p as [acc'' s''].
+      assert (length s = n + length s')%nat.
+      {
+        apply IHn with (acc := Z.shiftl acc 6 + _get_lo_bits a 6) (acc' := acc').
+        destruct a; destruct b5, b6; try discriminate.
+        inversion dc_eq; subst s'; subst acc'.
+        auto.
+      }
+      simpl; omega.
+    - destruct a; destruct b5, b6; discriminate.
 Qed.
 
+Lemma prefix_decoding_works:
+  forall a l s s',
+  utf8_decode s = Some (a :: nil) ->
+  utf8_decode s' = Some l ->
+  utf8_decode (s ++ s') = Some (a :: l).
+Proof.
+  intros a l s s' s_dec_eq s'_dec_eq.
+  unfold utf8_decode, _utf8_decode_aux in s_dec_eq.
+  (* removing s = nil *)
+  destruct s as [|c t]; simpl in *; try discriminate. 
+  (* removing _read_head_byte failure *)
+  destruct (_read_head_byte c); simpl in *; fold _utf8_decode_aux in *; try discriminate.
+  destruct p as [acc n].
+  (* removing _decode_codepoint failure *)
+  remember (_decode_codepoint acc t n) as dc_result.
+  destruct dc_result; try discriminate.
+  destruct p as [acc'' s''].
+  (* removing _utf8_decode_aux failure *)
+  destruct (_utf8_decode_aux s'' (length t)); try discriminate.
+  admit. (** FIXME **)
+Qed.
+      
 Lemma cp_enc_dec_eq:
   forall cp,
   is_valid_unicode (cp :: nil) ->
