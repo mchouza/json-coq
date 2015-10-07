@@ -501,10 +501,68 @@ Proof.
   + rewrite N2Z.inj_lt, Z2N.id by omega; simpl; omega.
 Qed. 
 
-Lemma decode_codepoint_lengths:
+Lemma string_cat_empty_r: forall s, s ++ "" = s.
+Proof.
+  induction s.
+  + auto.
+  + simpl; rewrite IHs; auto.
+Qed.
+
+Lemma string_cat_len: forall s s', (length (s ++ s') >= length s')%nat.
+Proof.
+  induction s.
+  + auto.
+  + intros; simpl; cut (length (s ++ s') >= length s')%nat; try omega.
+    apply IHs.
+Qed.
+
+Fixpoint skipn s n {struct n} :=
+  match n, s with
+  | S m, String c s' => skipn s' m
+  | _, _ => s
+  end.
+
+Lemma skipn_prefix: forall s s', skipn (s ++ s') (length s) = s'.
+Proof.
+  intros; induction s; auto.
+Qed.
+
+Lemma decode_codepoint_too_short:
+  forall n acc s,
+  (length s < n)%nat ->
+  _decode_codepoint acc s n = None.
+Proof.
+  induction n.
+  + intros; omega.
+  + intros acc s len_bound.
+    destruct s.
+    - auto.
+    - unfold _decode_codepoint; fold _decode_codepoint.
+      assert (_decode_codepoint (Z.shiftl acc 6 + _get_lo_bits a 6) s n = None) as dc_eq
+        by (apply IHn; simpl in len_bound; omega).
+      rewrite dc_eq; destruct a; destruct b5, b6; auto.
+Qed.
+
+Lemma decode_codepoint_ignores_tail:
+  forall n s s' s'' acc acc' acc'' t' t'',
+  length s = n ->
+  _decode_codepoint acc (s ++ s') n = Some (acc', t') ->
+  _decode_codepoint acc (s ++ s'') n = Some (acc'', t'') ->
+  acc' = acc''.
+Proof.
+Admitted. (** FIXME **)
+
+Lemma decode_codepoint_suffix_is_not_worse:
+  forall n acc s t, 
+  _decode_codepoint acc (s ++ t) n = None ->
+  _decode_codepoint acc s n = None.
+Proof.
+Admitted. (** FIXME **)
+
+Lemma decode_codepoint_leaves_tail:
   forall n acc s acc' s',
   _decode_codepoint acc s n = Some (acc', s') ->
-  (length s = n + length s')%nat.
+  skipn s n = s'.
 Proof.
   induction n.
   + intros acc s acc' s' dc_eq; inversion dc_eq; subst s; auto.
@@ -514,15 +572,30 @@ Proof.
     remember (_decode_codepoint (Z.shiftl acc 6 + _get_lo_bits a 6) s n) as inner_dc.
     destruct inner_dc.
     - destruct p as [acc'' s''].
-      assert (length s = n + length s')%nat.
+      assert (skipn s n = s')%nat.
       {
         apply IHn with (acc := Z.shiftl acc 6 + _get_lo_bits a 6) (acc' := acc').
         destruct a; destruct b5, b6; try discriminate.
         inversion dc_eq; subst s'; subst acc'.
         auto.
       }
-      simpl; omega.
+      auto.
     - destruct a; destruct b5, b6; discriminate.
+Qed.
+
+Lemma utf8_decode_aux_extra_dummy:
+  forall n s,
+  (n >= length s)%nat ->
+  _utf8_decode_aux s n = utf8_decode s.
+Proof.
+  unfold utf8_decode, _utf8_decode_aux.
+  induction s.
+  + destruct n; simpl; auto.
+  + simpl; case n; destruct (_read_head_byte a); auto; try omega.
+    destruct p; destruct (_decode_codepoint z s n0); auto.
+    destruct p; intros.
+    fold _utf8_decode_aux in *.
+    admit. (** FIXME **)
 Qed.
 
 Lemma prefix_decoding_works:
@@ -536,17 +609,73 @@ Proof.
   (* removing s = nil *)
   destruct s as [|c t]; simpl in *; try discriminate. 
   (* removing _read_head_byte failure *)
-  destruct (_read_head_byte c); simpl in *; fold _utf8_decode_aux in *; try discriminate.
+  remember (_read_head_byte c) as rhb_res.
+  destruct rhb_res; simpl in *; fold _utf8_decode_aux in *; try discriminate.
   destruct p as [acc n].
   (* removing _decode_codepoint failure *)
   remember (_decode_codepoint acc t n) as dc_result.
   destruct dc_result; try discriminate.
   destruct p as [acc'' s''].
   (* removing _utf8_decode_aux failure *)
-  destruct (_utf8_decode_aux s'' (length t)); try discriminate.
-  admit. (** FIXME **)
+  remember (_utf8_decode_aux s'' (length t)) as u8d_res.
+  destruct u8d_res; try discriminate.
+  (* starts unfolding here *)
+  unfold utf8_decode, _utf8_decode_aux; simpl.
+  rewrite <-Heqrhb_res.
+  fold _utf8_decode_aux.
+  (* l0 is nil, removes a *)
+  destruct l0; try discriminate.
+  inversion s_dec_eq; subst a; clear s_dec_eq.
+  (* s'' is "" *)
+  assert (s'' = "").
+  {
+    unfold _utf8_decode_aux in *.
+    destruct s''; destruct (length t); auto; try discriminate.
+    fold _utf8_decode_aux in *.
+    destruct (_read_head_byte a); try discriminate.
+    destruct p; destruct (_decode_codepoint z s'' n1); try discriminate.
+    destruct p; destruct (_utf8_decode_aux s n0); discriminate.
+  }
+  subst s''.
+  (* length t = n *)
+  assert (length t = n) as length_t_eq by admit. (** FIXME *)
+  (* the acc values should match *)
+  assert (_decode_codepoint acc (t ++ s') n = Some (acc'', s')) as decode_eq.
+  {
+    remember (_decode_codepoint acc (t ++ s') n) as dcl_res.
+    destruct dcl_res.
+    + destruct p as [acc''' s'''].
+      assert (acc''' = acc'').
+      {
+        apply decode_codepoint_ignores_tail 
+          with (n := n) (s := t) (s' := s') (s'' := "") (acc := acc) (t' := s''') (t'' := "").
+        + auto.
+        + auto.
+        + rewrite string_cat_empty_r; auto.
+      }
+      assert (s''' = s').
+      {
+        rewrite <-skipn_prefix with (s := t) (s' := s').
+        symmetry; apply decode_codepoint_leaves_tail with (acc := acc) (acc' := acc''').
+        rewrite length_t_eq; auto.
+      }
+      subst acc''' s'''; auto.
+    + rewrite decode_codepoint_suffix_is_not_worse with (t := s') in Heqdc_result.
+      - discriminate.
+      - rewrite Heqdcl_res; auto.
+  }
+  rewrite decode_eq.
+  (* the decoded values are the same *)
+  assert (_utf8_decode_aux s' (length (t ++ s')) = Some l) as decode_eq_2.
+  {
+    rewrite utf8_decode_aux_extra_dummy, s'_dec_eq.
+    + auto.
+    + apply string_cat_len.
+  }
+  rewrite decode_eq_2.
+  auto.
 Qed.
-      
+
 Lemma cp_enc_dec_eq:
   forall cp,
   is_valid_unicode (cp :: nil) ->
@@ -569,5 +698,5 @@ Proof.
       [sa [a_enc_eq a_dec_eq]] by (apply cp_enc_dec_eq; constructor; auto; constructor).
     exists (sa ++ s); simpl.
     rewrite enc_eq, a_enc_eq; split; auto.
-    admit. (** FIXME **)
+    apply prefix_decoding_works; auto.
 Qed.
