@@ -532,6 +532,18 @@ Proof.
   induction s; intros; destruct n; simpl; auto.
 Qed.
 
+Lemma skipn_length_eq:
+  forall n s,
+  (n <= length s)%nat ->
+  length (skipn s n) = (length s - n)%nat.
+Proof.
+  induction n.
+  + intros; simpl; omega.
+  + destruct s.
+    - auto.
+    - intros; simpl in *; apply IHn; omega.
+Qed.
+
 Lemma decode_codepoint_too_short:
   forall n acc s,
   (length s < n)%nat ->
@@ -673,7 +685,27 @@ Proof.
   }
   subst s''.
   (* length t = n *)
-  assert (length t = n) as length_t_eq by admit. (** FIXME *)
+  assert (length t = n) as length_t_eq.
+  {
+    destruct (lt_dec n (length t)).
+    {
+      absurd (length "" > 0)%nat.
+      + simpl; omega.
+      + rewrite <-decode_codepoint_leaves_tail 
+          with (n := n) (acc := acc) (s := t) (acc' := acc'') (s' := "")
+          by auto.
+        cut (length (skipn t n) = (length t - n)%nat); try omega.
+        apply skipn_length_eq; omega.
+    }
+    destruct (lt_dec (length t) n).
+    {
+      absurd (Some (acc'', "") = None).
+      + discriminate.
+      + rewrite <-decode_codepoint_too_short 
+          with (n := n) (acc := acc) (s := t); auto.
+    }
+    omega.
+  }
   (* the acc values should match *)
   assert (_decode_codepoint acc (t ++ s') n = Some (acc'', s')) as decode_eq.
   {
