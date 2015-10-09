@@ -527,6 +527,11 @@ Proof.
   intros; induction s; auto.
 Qed.
 
+Lemma skipn_length: forall s n, (length (skipn s n) <= length s)%nat.
+Proof.
+  induction s; intros; destruct n; simpl; auto.
+Qed.
+
 Lemma decode_codepoint_too_short:
   forall n acc s,
   (length s < n)%nat ->
@@ -550,14 +555,30 @@ Lemma decode_codepoint_ignores_tail:
   _decode_codepoint acc (s ++ s'') n = Some (acc'', t'') ->
   acc' = acc''.
 Proof.
-Admitted. (** FIXME **)
+  induction n.
+  + simpl; intros s s' s'' acc acc' acc'' t' t'' _ eq_1 eq_2.
+    inversion eq_1; inversion eq_2; subst acc; auto.
+  + intros s s' s'' acc acc' acc'' t' t'' len_eq.
+    destruct s.
+    - simpl in len_eq; discriminate.
+    - simpl; destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6;
+        simpl in *; try discriminate; apply IHn; omega.
+Qed.
 
 Lemma decode_codepoint_suffix_is_not_worse:
-  forall n acc s t, 
+  forall n acc s t,
+  length s = n ->
   _decode_codepoint acc (s ++ t) n = None ->
   _decode_codepoint acc s n = None.
 Proof.
-Admitted. (** FIXME **)
+  induction n.
+  + simpl; discriminate.
+  + unfold _decode_codepoint; fold _decode_codepoint; intros acc s t len_eq.
+    destruct s; auto.
+    simpl in len_eq.
+    destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6;
+      simpl; auto; apply IHn; omega.
+Qed.
 
 Lemma decode_codepoint_leaves_tail:
   forall n acc s acc' s',
@@ -588,14 +609,28 @@ Lemma utf8_decode_aux_extra_dummy:
   (n >= length s)%nat ->
   _utf8_decode_aux s n = utf8_decode s.
 Proof.
+  cut (forall n m s,
+       (n >= m)%nat ->
+       (m >= length s)%nat ->
+       _utf8_decode_aux s m = utf8_decode s).
+  {
+    intros H n s; apply H with (n := n); auto.
+  }
   unfold utf8_decode, _utf8_decode_aux.
-  induction s.
-  + destruct n; simpl; auto.
-  + simpl; case n; destruct (_read_head_byte a); auto; try omega.
-    destruct p; destruct (_decode_codepoint z s n0); auto.
-    destruct p; intros.
+  induction n.
+  + destruct s, m; simpl; auto; intros; omega.
+  + destruct m, s; simpl; auto; intros; try omega.
+    case (_read_head_byte a); auto.
+    destruct p; remember (_decode_codepoint z s n0) as dcp_z.
+    destruct dcp_z; auto; destruct p; intros.
     fold _utf8_decode_aux in *.
-    admit. (** FIXME **)
+    assert (length s0 <= length s)%nat.
+    {
+      rewrite <-decode_codepoint_leaves_tail 
+        with (s' := s0) (n := n0) (acc := z) (s := s) (acc' := z0) by auto.
+      apply skipn_length.
+    }
+    rewrite IHn, IHn with (m := length s); auto; omega.
 Qed.
 
 Lemma prefix_decoding_works:
@@ -662,6 +697,7 @@ Proof.
       subst acc''' s'''; auto.
     + rewrite decode_codepoint_suffix_is_not_worse with (t := s') in Heqdc_result.
       - discriminate.
+      - auto.
       - rewrite Heqdcl_res; auto.
   }
   rewrite decode_eq.
@@ -682,7 +718,21 @@ Lemma cp_enc_dec_eq:
   exists s, _encode_codepoint cp = Some s /\
   utf8_decode s = Some (cp :: nil).
 Proof.
-Admitted. (** FIXME **)
+  intros cp ivu_cp.
+  remember [cp] as l; destruct ivu_cp as [|c l]; try discriminate.
+  assert (hd c (c :: l) = hd c ([cp])) as cp_eq by (rewrite Heql; auto).
+  assert (tl (c :: l) = tl [cp]) as l_eq by (rewrite Heql; auto).
+  simpl in cp_eq; simpl in l_eq; subst c l; clear Heql ivu_cp.
+  assert (exists s, _encode_codepoint cp = Some s) as [s cp_enc_eq]
+    by (apply valid_cp_is_encoded; auto).
+  exists s; split; auto.
+  destruct (Z_lt_dec cp 0); try omega.
+  destruct (Z_le_dec cp U+"7F").
+  {
+    admit. (** FIXME **)
+  }
+  admit. (** FIXME **)
+Qed.
 
 Theorem decode_enc_eq:
   forall l,
