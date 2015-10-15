@@ -110,28 +110,59 @@ Qed.
 Definition _get_lo_bits c n :=
   Z.land (Z.of_N (N_of_ascii c)) ((Z.shiftl 1 n) - 1).
 
-Fixpoint _utf8_decode_aux (s:string) (acc:Z) (phase:nat): option (list Z) :=
-  match s, acc, phase with
+Fixpoint _utf8_decode_aux (s:string) (acc:Z) (phase:nat) (bound:Z): option (list Z) :=
+  match s, acc, phase, bound with
   (* base case *)
-  | "", 0, O => Some []
+  | "", 0, 0%nat, 0 => Some []
   (* normal case, decides based on the first byte *)
-  | String c s, 0, O =>
+  | String c s, 0, 0%nat, 0 =>
     match c with
     (* ASCII character, just decodes it *)
     | Ascii _ _ _ _ _ _ _ false =>
-      match _utf8_decode_aux s 0 0 with
+      match _utf8_decode_aux s 0 0 0 with
       | Some l => Some ((Z.of_N (N_of_ascii c)) :: l)
       | _ => None
       end
-    (* FIXME: ADD HANDLING FOR CODEPOINTS WITH LONGER ENCODINGS *)
+    (* two bytes codepoint *)
+    | Ascii _ _ _ _ _ false true true =>
+      _utf8_decode_aux s (_get_lo_bits c 5) 1 U+"80"
+    (* three bytes codepoint *)
+    | Ascii _ _ _ _ false true true true =>
+      _utf8_decode_aux s (_get_lo_bits c 4) 2 U+"800"
+    (* four bytes codepoint *)
+    | Ascii _ _ _ false true true true true =>
+      _utf8_decode_aux s (_get_lo_bits c 3) 3 U+"10000"
+    (* invalid *)
     | _ => None
     end
-  (* FIXME: ADD HANDLING FOR THE OTHER PHASES *)
-  | _, _, _ => None
+  (* final phase of multibyte codepoint *)
+  | String c s, acc, 1%nat, bound =>
+    (* checks c & the tail decoding *)
+    match c, _utf8_decode_aux s 0 O 0 with
+    | Ascii _ _ _ _ _ _ false true, Some l =>
+      (* calculates the codepoint and checks it *)
+      let cp := (Z.lor (Z.shiftl acc 6) (_get_lo_bits c 6)) in
+      match (Z_ge_dec cp bound), (Z_le_dec cp U+"D7FF"), (Z_le_dec cp U+"DFFF") with
+      | left _, left _, _ => Some (cp :: l)
+      | left _, _, right _ => Some (cp :: l)
+      | _, _, _ => None
+      end
+    | _, _ => None
+    end
+  (* intermediate phase of multibyte codepoint *)
+  | String c s, acc, S n, bound =>
+    (* checks c *)
+    match c with
+    | Ascii _ _ _ _ _ _ false true =>
+      _utf8_decode_aux s (Z.lor (Z.shiftl acc 6) (_get_lo_bits c 6)) n bound
+    | _ => None
+    end
+  (* invalid *)
+  | _, _, _, _ => None
   end.
 
 Definition utf8_decode (s:string): option (list Z) :=
-  _utf8_decode_aux s 0 0.
+  _utf8_decode_aux s 0 0 0.
 
 
 (** UTF-8 encoding support **)
