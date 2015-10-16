@@ -221,42 +221,39 @@ Inductive is_valid_unicode: list Z -> Prop :=
       forall c l, (0 <= c < U+"D800" \/ U+"DFFF" < c <= U+"10FFFF") ->
       is_valid_unicode l -> is_valid_unicode (c :: l).
 
+Lemma valid_cp_is_encoded:
+  forall a, (0 <= a < U+"D800" \/ U+"DFFF" < a <= U+"10FFFF") <->
+  exists s, _encode_codepoint a = Some s.
+Proof.
+  assert (forall t:string, exists s, Some t = Some s) as ex_eq by (intros; exists t; auto).
+  Ltac oor_tactic := unfold "U+" in *; simpl in *; split; [intros; omega | intros [s Habs]; discriminate].
+  Ltac ir_tactic := unfold "U+" in *; simpl in *; split; [intros | intros; omega].
+  intros a; unfold _encode_codepoint.
+  destruct (Z_lt_dec a 0). oor_tactic.
+  destruct (Z_le_dec a U+"7F"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"7FF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"D7FF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"DFFF"). oor_tactic.
+  destruct (Z_le_dec a U+"FFFF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"10FFFF"). ir_tactic; apply ex_eq.
+  oor_tactic.
+Qed.
+
 Theorem valid_unicode_is_encoded:
   forall l, is_valid_unicode l <-> exists s, utf8_encode l = Some s.
 Proof.
-  assert (forall t:string, exists s, Some t = Some s) as ex_eq by (intros; exists t; auto).
-  intros l; split.
-  + induction l.
-    - intros; exists ""; auto.
-    - remember (a :: l) as a_l; intro ivu_a_l; destruct ivu_a_l as [|c l' c_bounds].
-      * discriminate.
-      * injection Heqa_l as a_eq l_eq; subst c; subst l'; clear Heqa_l.
-        specialize (IHl ivu_a_l); clear ivu_a_l; destruct IHl as [s' l_enc_eq].
-        unfold utf8_encode, _encode_codepoint in *.
-        unfold "U+" in c_bounds; simpl in c_bounds.
-        destruct (Z_lt_dec a 0); try omega.
-        destruct (Z_le_dec a U+"7F"); try (rewrite l_enc_eq; apply ex_eq).
-        destruct (Z_le_dec a U+"7FF"); try (rewrite l_enc_eq; apply ex_eq).
-        destruct (Z_le_dec a U+"D7FF"); try (rewrite l_enc_eq; apply ex_eq).
-        destruct (Z_le_dec a U+"DFFF"); try (unfold "U+" in *; simpl in *; omega).
-        destruct (Z_le_dec a U+"FFFF"); try (rewrite l_enc_eq; apply ex_eq).
-        destruct (Z_le_dec a U+"10FFFF"); try (rewrite l_enc_eq; apply ex_eq).
-        unfold "U+" in *; simpl in *; omega.
-  + induction l.
-    - constructor.
-    - simpl; remember (_encode_codepoint a) as a_enc.
-      destruct (utf8_encode l), a_enc; intros [s' enc_eq]; try discriminate.
-      specialize (IHl (ex_eq s)).
-      constructor; try apply IHl.
-      unfold _encode_codepoint in *.
-      destruct (Z_lt_dec a 0); try discriminate.
-      destruct (Z_le_dec a U+"7F"); try (unfold "U+" in *; simpl in *; omega).
-      destruct (Z_le_dec a U+"7FF"); try (unfold "U+" in *; simpl in *; omega).
-      destruct (Z_le_dec a U+"D7FF"); try (unfold "U+" in *; simpl in *; omega).
-      destruct (Z_le_dec a U+"DFFF"); try discriminate.
-      destruct (Z_le_dec a U+"FFFF"); try (unfold "U+" in *; simpl in *; omega).
-      destruct (Z_le_dec a U+"10FFFF"); try (unfold "U+" in *; simpl in *; omega).
-      discriminate.
+  induction l.
+  + simpl; split; intros; [exists ""; auto | apply ivu_empty].
+  + unfold utf8_encode; fold utf8_encode; split.
+    - intros ivu_a_l; inversion ivu_a_l as [|a' l' a_bounds ivu_l].
+      rewrite IHl in ivu_l; destruct ivu_l as [s' l_enc_eq].
+      rewrite valid_cp_is_encoded in a_bounds; destruct a_bounds as [s'' a_enc_eq].
+      rewrite l_enc_eq, a_enc_eq; exists (s'' ++ s'); auto.
+    - remember (_encode_codepoint a) as ecp_a.
+      destruct ecp_a, (utf8_encode l); try (intros [s' Habs]; discriminate).
+      intros _; apply ivu_cons.
+      * rewrite valid_cp_is_encoded, <-Heqecp_a; exists s; auto.
+      * rewrite IHl; exists s0; auto.
 Qed.
 
 Theorem decoded_iff_encoded:
