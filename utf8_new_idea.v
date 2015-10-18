@@ -210,7 +210,30 @@ Fixpoint utf8_encode (l:list Z) :=
 
 (** Auxiliary theorems **)
 
-(* FIXME: ADD REQUIRED THEOREMS *)
+Lemma land_bounds:
+  forall a b,
+  0 <= a ->
+  0 <= b ->
+  0 <= Z.land a b <= a.
+Proof.
+  intros a b a_bounds b_bounds.
+  (* clears the easy cases first *)
+  destruct a as [|p|p], b as [|q|q]; simpl; try omega;
+  assert (Z.neg p < 0) as np_is_neg by apply Zlt_neg_0;
+  assert (Z.neg q < 0) as nq_is_neg by apply Zlt_neg_0; try omega.
+  clear a_bounds b_bounds np_is_neg nq_is_neg; generalize q; clear q.
+  (* easy lemmas for positive values *)
+  assert (forall p, 0 < Z.pos p) as pos_gt_0 by apply Pos2Z.is_pos.
+  assert (forall p, 0 <= Z.pos p) as pos_ge_0 by (intros p'; specialize (pos_gt_0 p'); omega).
+  assert (forall p, 1 <= Z.pos p) as pos_ge_1 by (intros p'; specialize (pos_gt_0 p'); omega).
+  (* now the main induction, clearing the trivial cases first *)
+  induction p; destruct q; try (split; discriminate);
+  simpl; remember (Pos.land p q) as pnq; destruct pnq; simpl;
+  specialize (IHp q); rewrite <-Heqpnq in IHp; simpl in IHp;
+  unfold "<=", "?=", "?="%positive in *; simpl; auto.
+  (* the final case *)
+  rewrite Pos.compare_cont_spec in *; destruct (p0 ?= p)%positive; simpl; auto.
+Qed.
 
 
 (** Unicode encoding/decoding theorems **)
@@ -256,7 +279,93 @@ Proof.
       * rewrite IHl; exists s0; auto.
 Qed.
 
+Lemma aux_decode_higher_phase_non_empty:
+  forall s acc n bound,
+  _utf8_decode_aux s acc (S n) bound <> Some [].
+Proof.
+  intros s acc n bound.
+  generalize s acc; clear s acc.
+  induction n.
+  + destruct s.
+    - intros; case acc; discriminate.
+    - unfold _utf8_decode_aux; fold _utf8_decode_aux; intros.
+      remember (Z.lor (Z.shiftl acc 6) (_get_lo_bits a 6)) as cp.
+      destruct (_utf8_decode_aux s 0 0 0), (Z_ge_dec cp bound),
+               (Z_le_dec cp U+("D7FF")), (Z_le_dec cp U+("DFFF")),
+               acc, a;
+      destruct b5, b6; discriminate.
+  + destruct s.
+    - intros; case acc; discriminate.
+    - unfold _utf8_decode_aux; fold _utf8_decode_aux; intros.
+      destruct acc, a; destruct b5, b6; try discriminate; apply IHn.
+Qed.
+
+Lemma empty_decodes_empty:
+  forall s, utf8_decode s = Some [] -> s = "".
+Proof.
+  destruct s; unfold utf8_decode.
+  + auto.
+  + simpl; destruct (_utf8_decode_aux s 0 0 0), a; destruct b2, b3, b4, b5, b6;
+    try discriminate; intros Habs; exfalso;
+    generalize Habs; apply aux_decode_higher_phase_non_empty.
+Qed.
+
+Lemma decode_lt_80:
+  forall a s cp l,
+  Z.of_N (N_of_ascii a) < U+"80" ->
+  utf8_decode (String a s) = Some (cp :: l) ->
+  0 <= cp <= U+"7F".
+Proof.
+  intros a s cp l a_bounds; unfold utf8_decode; simpl.
+  destruct a, (_utf8_decode_aux s 0 0 0);
+  destruct b, b0, b1, b2, b3, b4, b5, b6; simpl; try discriminate;
+  unfold "U+" in *; simpl in *; try omega; intros l_eq;
+  injection l_eq; intros; omega.
+Qed.
+
+Lemma decode_ge_c0_lt_e0:
+  forall a s cp l,
+  U+"C0" <= Z.of_N (N_of_ascii a) < U+"E0" ->
+  utf8_decode (String a s) = Some (cp :: l) ->
+  U+"80" <= cp <= U+"7FF".
+Proof.
+  assert (forall s acc cp l,
+          0 <= acc < 32 ->
+          _utf8_decode_aux s acc 1 128 = Some (cp :: l) ->
+          128 <= cp <= 2047) as dec_bounds.
+  {
+    intros s acc cp l acc_bounds.
+    destruct s.
+    + case acc; discriminate.
+    + unfold _utf8_decode_aux; fold _utf8_decode_aux.
+      remember (Z.lor (Z.shiftl acc 6) (_get_lo_bits a 6)) as cp'.
+      destruct acc, a, (_utf8_decode_aux s 0 0 0); destruct b5, b6; try discriminate;
+      destruct (Z_ge_dec cp' 128); try discriminate.
+      - destruct b, b0, b1, b2, b3, b4; unfold _get_lo_bits in Heqcp'; simpl in Heqcp';
+        destruct (Z_le_dec cp' U+("D7FF")), (Z_le_dec cp' U+("DFFF"));
+        unfold "U+" in *; simpl in *; try discriminate; intros Heq_cp_l; injection Heq_cp_l;
+        intros; omega.
+      - admit. (** FIXME **)
+      - destruct acc_bounds as [Habs _]; unfold "<=" in Habs; simpl in Habs;
+        exfalso; apply Habs; auto.
+  }
+  intros a s cp l a_bounds; unfold utf8_decode; simpl.
+  destruct a, (_utf8_decode_aux s 0 0 0);
+  destruct b, b0, b1, b2, b3, b4, b5, b6; simpl; try discriminate;
+  unfold _get_lo_bits; unfold "U+" in *; simpl in *; try omega;
+  apply dec_bounds; omega.
+Qed.
+
 Theorem decoded_iff_encoded:
   forall l s, utf8_encode l = Some s <-> utf8_decode s = Some l.
 Proof.
-Admitted.
+  induction l.
+  + intros; simpl; split; unfold utf8_decode.
+    - intros Heq; injection Heq; intros Heq'; rewrite <-Heq'; auto.
+    - destruct s.
+      * auto.
+      * intros dec_eq; rewrite empty_decodes_empty with (s := String a s); auto.
+  + unfold utf8_encode, utf8_decode, _encode_codepoint, _utf8_decode_aux.
+    fold _utf8_decode_aux; fold utf8_decode; fold utf8_encode.
+    destruct (Z_lt_dec a 0).
+Admitted. (** FIXME **)
