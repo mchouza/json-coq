@@ -235,6 +235,60 @@ Proof.
   rewrite Pos.compare_cont_spec in *; destruct (p0 ?= p)%positive; simpl; auto.
 Qed.
 
+Lemma lor_bounds:
+  forall a b,
+  0 <= a ->
+  0 <= b ->
+  a <= Z.lor a b <= a + b.
+Proof.
+Admitted. (** FIXME **)
+
+Lemma lor_acc_lo_bits_bounds:
+  forall acc acc_lo acc_hi a n,
+  0 <= acc_lo ->
+  acc_lo <= acc_hi ->
+  acc_lo <= acc <= acc_hi ->
+  0 <= n < 8 ->
+  Z.shiftl acc_lo n <=
+  Z.lor (Z.shiftl acc n) (_get_lo_bits a n) <
+  (Z.shiftl acc_hi n) + (Z.shiftl 1 n).
+Proof.
+  (* intros *)
+  intros acc acc_lo acc_hi a n.
+  intros acc_lo_bound acc_hi_bounds acc_bounds n_bounds.
+  (* bounds _get_lo_bits *)
+  assert (0 <= _get_lo_bits a n <= Z.shiftl 1 n - 1) as get_lo_bits_bounds.
+  {
+    unfold _get_lo_bits.
+    rewrite Z.land_comm.
+    apply land_bounds.
+    + rewrite Z.shiftl_1_l.
+      cut (0 < 2 ^ n). omega.
+      apply Z.pow_pos_nonneg; omega.
+    + apply N2Z.is_nonneg.
+  }
+  (* bounds the logical OR *)
+  assert (Z.shiftl acc n <=
+          Z.lor (Z.shiftl acc n) (_get_lo_bits a n) <=
+          Z.shiftl acc n + _get_lo_bits a n) as acc_lor_lo_bounds.
+  {
+    apply lor_bounds.
+    + rewrite Z.shiftl_mul_pow2, <-Zmult_0_r with (n := 0) by omega.
+      apply Zmult_le_compat; try omega.
+      apply Z.pow_nonneg; omega.
+    + omega.
+  }
+  (* bounds the shifted accumulator *)
+  assert (0 <= 2^n) as two_to_n_nonneg by (apply Z.pow_nonneg; omega).
+  assert (Z.shiftl acc_lo n <= Z.shiftl acc n <= Z.shiftl acc_hi n) as shifted_acc_bounds.
+  {
+    repeat rewrite Z.shiftl_mul_pow2 by omega.
+    split; apply Zmult_le_compat; omega.
+  }
+  (* finally omega has all the info it needs *)
+  omega.
+Qed.
+
 
 (** Unicode encoding/decoding theorems **)
 
@@ -339,15 +393,16 @@ Proof.
     + case acc; discriminate.
     + unfold _utf8_decode_aux; fold _utf8_decode_aux.
       remember (Z.lor (Z.shiftl acc 6) (_get_lo_bits a 6)) as cp'.
-      destruct acc, a, (_utf8_decode_aux s 0 0 0); destruct b5, b6; try discriminate;
-      destruct (Z_ge_dec cp' 128); try discriminate.
-      - destruct b, b0, b1, b2, b3, b4; unfold _get_lo_bits in Heqcp'; simpl in Heqcp';
-        destruct (Z_le_dec cp' U+("D7FF")), (Z_le_dec cp' U+("DFFF"));
-        unfold "U+" in *; simpl in *; try discriminate; intros Heq_cp_l; injection Heq_cp_l;
-        intros; omega.
-      - admit. (** FIXME **)
-      - destruct acc_bounds as [Habs _]; unfold "<=" in Habs; simpl in Habs;
-        exfalso; apply Habs; auto.
+      destruct a, (_utf8_decode_aux s 0 0 0); destruct b5, b6; try discriminate;
+      destruct (Z_ge_dec cp' 128); try (destruct acc; discriminate).
+      assert (Z.shiftl 0 6 <=
+                Z.lor (Z.shiftl acc 6) (_get_lo_bits (Ascii b b0 b1 b2 b3 b4 false true) 6) <
+                (Z.shiftl 31 6) + (Z.shiftl 1 6)) as cp_bounds.
+      apply lor_acc_lo_bits_bounds; omega.
+      rewrite <-Heqcp' in cp_bounds.
+      destruct (Z_le_dec cp' U+("D7FF")), (Z_le_dec cp' U+("DFFF"));
+      unfold "U+" in *; simpl in *; try discriminate; intros Heq_cp_l; try omega.
+      destruct acc; injection Heq_cp_l; intros; omega.
   }
   intros a s cp l a_bounds; unfold utf8_decode; simpl.
   destruct a, (_utf8_decode_aux s 0 0 0);
