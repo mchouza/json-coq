@@ -102,211 +102,6 @@ Proof.
   auto.
 Qed.
 
-(** Arithmetical bounds for bitwise ops **)
-
-Lemma pos_lor_lower_bound:
-  forall p q, (p <= Pos.lor p q)%positive.
-Proof.
-  assert (forall p c, Pos.compare_cont p p c = c) as p_p_keeps by
-    (induction p; simpl; auto).
-  unfold "<="%positive, "?="%positive.
-  induction p.
-  + simpl; destruct q; simpl; try apply IHp.
-    rewrite p_p_keeps; discriminate.
-  + simpl; destruct q; simpl; try apply IHp.
-    - rewrite Pos.compare_cont_spec.
-      specialize IHp with (q := q).
-      unfold "?="%positive; destruct Pos.compare_cont; simpl; auto.
-      discriminate.
-    - rewrite p_p_keeps; discriminate.
-  + destruct q; simpl; discriminate.
-Qed.
-
-Lemma switch_Eq_Eq:
-  forall c, Pos.switch_Eq Eq c = c.
-Proof.
-  destruct c; simpl; auto.
-Qed.
-
-Lemma pos_lor_higher_bound:
-  forall p q, (Pos.lor p q <= p + q)%positive.
-Proof.
-  assert (forall p c, Pos.compare_cont p p c = c) as p_p_keeps by
-    (induction p; simpl; auto).
-  assert (forall p c, Pos.compare_cont p (Pos.succ p) c = Lt) as p_lt_succ by
-    (induction p; simpl; auto).
-  unfold "<="%positive, "?="%positive.
-  induction p; destruct q; simpl; try apply IHp.
-  + specialize IHp with (q := q).
-    rewrite Pos.add_carry_spec, Pos.compare_cont_spec in *.
-    rewrite switch_Eq_Eq in IHp.
-    remember (Pos.lor p q ?= p + q)%positive as lor_sum_cmp.
-    destruct lor_sum_cmp; try (rewrite Pos.compare_succ_r, <-Heqlor_sum_cmp; simpl; discriminate).
-    exfalso; apply IHp; auto.
-  + rewrite p_lt_succ; discriminate.
-  + rewrite p_p_keeps; discriminate.
-  + rewrite p_lt_succ; discriminate.
-  + rewrite p_p_keeps; discriminate.
-  + discriminate.
-Qed.
-
-Lemma lor_bounds:
-  forall a b, 0 <= a -> 0 <= b -> a <= Z.lor a b <= a + b.
-Proof.
-  intros a b a_ge_0 b_ge_0.
-  (* just tries all possible constructors *)
-  destruct a, b.
-  + auto.
-  + simpl; omega.
-  + simpl; omega.
-  + simpl; omega.
-  + (* only nontrivial case *)
-    split; [apply pos_lor_lower_bound | apply pos_lor_higher_bound].
-  + unfold "<=" in *; simpl in *; auto.
-  + unfold "<=" in *; simpl in *; auto.
-  + unfold "<=" in *; simpl in *; auto.
-  + unfold "<=" in *; simpl in *; auto.
-Qed.
-
-Lemma Ndouble_inj_le:
-  forall m n, (n <= m -> Pos.Ndouble n <= Pos.Ndouble m)%N.
-Proof.
-  destruct n, m; simpl; auto.
-Qed.
-
-Lemma Nsucc_double_inj_le:
-  forall m n, (n <= m -> Pos.Nsucc_double n <= Pos.Nsucc_double m)%N.
-Proof.
-  destruct n, m; simpl; auto.
-Qed.
-
-Lemma pos_land_bound:
-  forall p q, (0 <= Pos.land p q <= N.pos p)%N.
-Proof.
-  assert (forall p, N.pos p~0 = Pos.Ndouble (N.pos p)) as Ndouble_eq by auto.
-  assert (forall p, N.pos p~1 = Pos.Nsucc_double (N.pos p)) as Nsucc_double_eq by auto.
-  induction p; destruct q; simpl; try (split; discriminate).
-  + rewrite Nsucc_double_eq; split.
-    - case (Pos.land p q); unfold "<="%N; discriminate.
-    - apply Nsucc_double_inj_le, IHp.
-  + rewrite Nsucc_double_eq; split.
-    - case (Pos.land p q); discriminate.
-    - apply N.le_trans with (m := Pos.Ndouble (N.pos p)).
-      * apply Ndouble_inj_le, IHp.
-      * unfold "<="%N, "?="%N, "?="%positive; simpl.
-        rewrite Pos.compare_cont_refl; discriminate.
-  + rewrite Ndouble_eq; split.
-    - case (Pos.land p q); discriminate.
-    - apply Ndouble_inj_le, IHp.
-  + rewrite Ndouble_eq; split.
-    - case (Pos.land p q); discriminate.
-    - apply Ndouble_inj_le, IHp.
-Qed.
-
-Lemma land_bounds:
-  forall a b, 0 <= a -> 0 <= b -> 0 <= Z.land a b <= a.
-Proof.
-  (* just tries all combinations, previously removing those automatically solved *)
-  intros; destruct a, b; auto.
-  + (* only nontrivial case *)
-    unfold Z.land; rewrite <-N2Z.inj_0, <-N2Z.inj_pos.
-    do 2 rewrite <-N2Z.inj_le.
-    apply pos_land_bound.
-  + unfold "<=" in *; simpl in *; auto.
-  + unfold "<=" in *; simpl in *; auto.
-  + unfold "<=" in *; simpl in *; auto.
-Qed.
-
-Lemma shiftl_ge_0: forall a n, a >= 0 -> Z.shiftl a n >= 0.
-Proof.
-  intros a n a_ge_0; unfold Z.shiftl; destruct n.
-  + auto.
-  + apply Pos.iter_invariant; auto.
-    unfold ">="; destruct x; simpl; auto.
-  + apply Pos.iter_invariant; auto.
-    unfold ">="; destruct x; try case p0; simpl; auto; discriminate.
-Qed.
-
-Lemma shiftr_ge_0: forall a n, a >= 0 -> Z.shiftr a n >= 0.
-Proof.
-  unfold Z.shiftr; intros; apply shiftl_ge_0; auto.
-Qed.
-
-Lemma shiftl_pos: forall a n, a > 0 -> n >= 0 -> Z.shiftl a n > 0.
-Proof.
-  intros a n a_pos n_ge_0; unfold Z.shiftl; destruct n.
-  + auto.
-  + apply Pos.iter_invariant; auto.
-    intros x; unfold ">"; destruct x; simpl; auto.
-  + unfold ">=" in *; simpl in *; exfalso; apply n_ge_0; auto.
-Qed.
-
-(** ASCII bits access **)
-
-Lemma Zlength_cons {A}: forall (a:A) l, Zlength (a :: l) = Zlength l + 1.
-Proof.
-  intros; repeat rewrite Zlength_correct; simpl Datatypes.length.
-  rewrite <-plus_0_r with (n := S (Datatypes.length l)), plus_Sn_m, plus_n_Sm.
-  rewrite Nat2Z.inj_add; auto.
-Qed.
-
-Lemma testbit_N_of_digits:
-  forall l n d, 
-  0 <= n < Zlength l ->
-  Z.testbit (Z.of_N (N_of_digits l)) n = nth (Z.to_nat n) l d.
-Proof.
-  induction l.
-  {
-    unfold Zlength; simpl; intros; omega.
-  }
-  {
-    intros n d n_bounds.
-    destruct (Z_eq_dec n 0).
-    + rewrite e; unfold N_of_digits; fold N_of_digits; destruct a.
-      - rewrite N.add_comm, N2Z.inj_add, N2Z.inj_mul; simpl Z.of_N; simpl Z.to_nat.
-        rewrite Z.testbit_odd_0; simpl nth; auto.
-      - rewrite N.add_0_l, N2Z.inj_mul; simpl Z.of_N; simpl Z.to_nat.
-        rewrite Z.testbit_even_0; simpl nth; auto.
-    + assert (n = n - 1 + 1) as n_eq by omega.
-      assert (Z.to_nat 1 = 1%nat) as one_eq by (simpl; auto).
-      assert (forall k, k >= 0 -> Z.to_nat (k + 1) = S (Z.to_nat k)) as S_eq
-        by (intros; rewrite Z2Nat.inj_add, one_eq, <-plus_n_Sm by omega; omega).
-      rewrite <-Z2N.id with (n := n) at 1 by omega.
-      rewrite N2Z.inj_testbit, n_eq, Z2N.inj_add by omega; simpl Z.to_N.
-      unfold N_of_digits; fold N_of_digits.
-      rewrite S_eq with (k := n - 1) by omega.
-      rewrite N.add_1_r.
-      rewrite Zlength_cons in n_bounds.
-      simpl nth; destruct a.
-      - rewrite N.add_comm, N.testbit_odd_succ, <-Z2N.inj_testbit.
-        * apply IHl; omega.
-        * omega.
-        * rewrite <-N2Z.id with (n := 0%N), <-Z2N.inj_le; simpl; omega.
-      - rewrite N.add_0_l, N.testbit_even_succ, <-Z2N.inj_testbit.
-        * apply IHl; omega.
-        * omega.
-        * rewrite <-N2Z.id with (n := 0%N), <-Z2N.inj_le; simpl; omega.
-  }
-Qed.
-
-Lemma ascii_bits: 
-  forall c b0 b1 b2 b3 b4 b5 b6 b7 a,
-  c = Ascii b0 b1 b2 b3 b4 b5 b6 b7 ->
-  a = Z.of_N (N_of_ascii c) ->
-  Z.testbit a 0 = b0 /\
-  Z.testbit a 1 = b1 /\
-  Z.testbit a 2 = b2 /\
-  Z.testbit a 3 = b3 /\
-  Z.testbit a 4 = b4 /\
-  Z.testbit a 5 = b5 /\
-  Z.testbit a 6 = b6 /\
-  Z.testbit a 7 = b7.
-Proof.
-  intros c b0 b1 b2 b3 b4 b5 b6 b7 a c_eq a_eq.
-  rewrite a_eq, c_eq; unfold N_of_ascii; repeat split;
-  rewrite testbit_N_of_digits with (d := false) by (rewrite Zlength_correct; simpl; omega);
-  auto.
-Qed.
 
 (** UTF-8 description based on https://tools.ietf.org/html/rfc3629#section-3 **)
 
@@ -315,51 +110,60 @@ Qed.
 Definition _get_lo_bits c n :=
   Z.land (Z.of_N (N_of_ascii c)) ((Z.shiftl 1 n) - 1).
 
-Definition _read_head_byte c :=
-  match c with
-  | Ascii _ _ _ _ _ _ _ false => Some ((_get_lo_bits c 7), 0%nat) 
-  | Ascii _ _ _ _ _ false true true => Some ((_get_lo_bits c 5), 1%nat)
-  | Ascii _ _ _ _ false true true true => Some ((_get_lo_bits c 4), 2%nat)
-  | Ascii _ _ _ false true true true true => Some ((_get_lo_bits c 3), 3%nat)
-  | _ => None
-  end.
-
-Fixpoint _decode_codepoint (acc:Z) (s:string) (n:nat) {struct n} :=
-  match n with
-  | O => Some (acc, s)
-  | S m =>
-      match s with
-      | String c s' =>
-          match c with
-          | Ascii _ _ _ _ _ _ false true =>
-              _decode_codepoint ((Z.shiftl acc 6) + (_get_lo_bits c 6)) s' m
-          | _ => None
-          end
+Fixpoint _utf8_decode_aux (s:string) (acc:Z) (phase:nat) (bound:Z): option (list Z) :=
+  match s, acc, phase, bound with
+  (* base case *)
+  | "", 0, 0%nat, 0 => Some []
+  (* normal case, decides based on the first byte *)
+  | String c s, 0, 0%nat, 0 =>
+    match c with
+    (* ASCII character, just decodes it *)
+    | Ascii _ _ _ _ _ _ _ false =>
+      match _utf8_decode_aux s 0 0 0 with
+      | Some l => Some ((Z.of_N (N_of_ascii c)) :: l)
       | _ => None
       end
-  end.
-
-Fixpoint _utf8_decode_aux s dummy :=
-  match s, dummy with
-  | "", _ => Some nil
-  | String c s', S m =>
-      match _read_head_byte c with
-      | Some (acc, n) =>
-          match _decode_codepoint acc s' n with
-          | Some (acc, s'') =>
-              match _utf8_decode_aux s'' m with
-              | Some l => Some (acc :: l)
-              | _ => None
-              end
-          | _ => None
-          end
-      | _ => None
+    (* two bytes codepoint *)
+    | Ascii _ _ _ _ _ false true true =>
+      _utf8_decode_aux s (_get_lo_bits c 5) 1 U+"80"
+    (* three bytes codepoint *)
+    | Ascii _ _ _ _ false true true true =>
+      _utf8_decode_aux s (_get_lo_bits c 4) 2 U+"800"
+    (* four bytes codepoint *)
+    | Ascii _ _ _ false true true true true =>
+      _utf8_decode_aux s (_get_lo_bits c 3) 3 U+"10000"
+    (* invalid *)
+    | _ => None
+    end
+  (* final phase of multibyte codepoint *)
+  | String c s, acc, 1%nat, bound =>
+    (* checks c & the tail decoding *)
+    match c, _utf8_decode_aux s 0 O 0 with
+    | Ascii _ _ _ _ _ _ false true, Some l =>
+      (* calculates the codepoint and checks it *)
+      let cp := (Z.lor (Z.shiftl acc 6) (_get_lo_bits c 6)) in
+      match (Z_ge_dec cp bound), (Z_le_dec cp U+"D7FF"), (Z_le_dec cp U+"DFFF") with
+      | left _, left _, _ => Some (cp :: l)
+      | left _, _, right _ => Some (cp :: l)
+      | _, _, _ => None
       end
-  | _, _ => None
+    | _, _ => None
+    end
+  (* intermediate phase of multibyte codepoint *)
+  | String c s, acc, S n, bound =>
+    (* checks c *)
+    match c with
+    | Ascii _ _ _ _ _ _ false true =>
+      _utf8_decode_aux s (Z.lor (Z.shiftl acc 6) (_get_lo_bits c 6)) n bound
+    | _ => None
+    end
+  (* invalid *)
+  | _, _, _, _ => None
   end.
 
 Definition utf8_decode (s:string): option (list Z) :=
-  _utf8_decode_aux s (length s).
+  _utf8_decode_aux s 0 0 0.
+
 
 (** UTF-8 encoding support **)
 
@@ -368,23 +172,29 @@ Definition _aux_enc_cp_byte cp hi lo offset :=
 
 Definition _encode_codepoint cp :=
   match (Z_lt_dec cp 0), (Z_le_dec cp U+"7F"), (Z_le_dec cp U+"7FF"),
+        (Z_le_dec cp U+"D7FF"), (Z_le_dec cp U+"DFFF"),
         (Z_le_dec cp U+"FFFF"), (Z_le_dec cp U+"10FFFF") with
-  | left _, _, _, _, _ => None
-  | _, left _, _, _, _ =>
+  | left _, _, _, _, _, _, _ => None
+  | _, left _, _, _, _, _, _ =>
       Some (String (ascii_of_N (Z.to_N cp)) "")
-  | _, _, left _, _, _ =>
+  | _, _, left _, _, _, _, _ =>
       Some (String (_aux_enc_cp_byte cp 10 6 U+"C0") 
            (String (_aux_enc_cp_byte cp 5 0 U+"80") ""))
-  | _, _, _, left _, _ =>
+  | _, _, _, left _, _, _, _ =>
       Some (String (_aux_enc_cp_byte cp 15 12 U+"E0")
            (String (_aux_enc_cp_byte cp 11 6 U+"80")
            (String (_aux_enc_cp_byte cp 5 0 U+"80") "")))
-  | _, _, _, _, left _ =>
+  | _, _, _, _, left _, _, _ => None
+  | _, _, _, _, _, left _, _ =>
+      Some (String (_aux_enc_cp_byte cp 15 12 U+"E0")
+           (String (_aux_enc_cp_byte cp 11 6 U+"80")
+           (String (_aux_enc_cp_byte cp 5 0 U+"80") "")))
+  | _, _, _, _, _, _, left _ =>
       Some (String (_aux_enc_cp_byte cp 20 18 U+"F0")
            (String (_aux_enc_cp_byte cp 17 12 U+"80")
            (String (_aux_enc_cp_byte cp 11 6 U+"80")
            (String (_aux_enc_cp_byte cp 5 0 U+"80") ""))))
-  | _, _, _, _, _ => None
+  | _, _, _, _, _, _, _ => None
   end.
 
 Fixpoint utf8_encode (l:list Z) :=
@@ -397,388 +207,275 @@ Fixpoint utf8_encode (l:list Z) :=
       end
   end.
 
-Inductive is_valid_unicode: list Z -> Prop :=
-  | ivu_empty: is_valid_unicode nil
-  | ivu_cons: forall c l, 0 <= c <= U+"10FFFF" -> is_valid_unicode l -> is_valid_unicode (c :: l).
 
-Lemma valid_cp_is_encoded:
-  forall cp, 0 <= cp <= U+"10FFFF" <-> exists s, _encode_codepoint cp = Some s.
+(** Auxiliary theorems **)
+
+Lemma land_bounds:
+  forall a b,
+  0 <= a ->
+  0 <= b ->
+  0 <= Z.land a b <= a.
 Proof.
-  split.
-  {
-    intros cp_bounds.
-    assert (forall s':string, exists s, Some s' = Some s) as ex_eq by (intros; exists s'; auto).
-    unfold _encode_codepoint.
-    destruct (Z_lt_dec cp 0); try omega.
-    destruct (Z_le_dec cp U+"7F"); try apply ex_eq.
-    destruct (Z_le_dec cp U+"7FF"); try apply ex_eq.
-    destruct (Z_le_dec cp U+"FFFF"); try apply ex_eq.
-    destruct (Z_le_dec cp U+"10FFFF"); try apply ex_eq.
-    omega.
-  }
-  {
-    intros [s cp_eq].
-    unfold _encode_codepoint in cp_eq.
-    destruct (Z_lt_dec cp 0); try discriminate cp_eq.
-    destruct (Z_le_dec cp U+"7F"); try (unfold "U+" in *; simpl in *; omega).
-    destruct (Z_le_dec cp U+"7FF"); try (unfold "U+" in *; simpl in *; omega).
-    destruct (Z_le_dec cp U+"FFFF"); try (unfold "U+" in *; simpl in *; omega).
-    destruct (Z_le_dec cp U+"10FFFF"); try (unfold "U+" in *; simpl in *; omega).
-    discriminate cp_eq.
-  }
+  intros a b a_bounds b_bounds.
+  (* clears the easy cases first *)
+  destruct a as [|p|p], b as [|q|q]; simpl; try omega;
+  assert (Z.neg p < 0) as np_is_neg by apply Zlt_neg_0;
+  assert (Z.neg q < 0) as nq_is_neg by apply Zlt_neg_0; try omega.
+  clear a_bounds b_bounds np_is_neg nq_is_neg; generalize q; clear q.
+  (* easy lemmas for positive values *)
+  assert (forall p, 0 < Z.pos p) as pos_gt_0 by apply Pos2Z.is_pos.
+  assert (forall p, 0 <= Z.pos p) as pos_ge_0 by (intros p'; specialize (pos_gt_0 p'); omega).
+  assert (forall p, 1 <= Z.pos p) as pos_ge_1 by (intros p'; specialize (pos_gt_0 p'); omega).
+  (* now the main induction, clearing the trivial cases first *)
+  induction p; destruct q; try (split; discriminate);
+  simpl; remember (Pos.land p q) as pnq; destruct pnq; simpl;
+  specialize (IHp q); rewrite <-Heqpnq in IHp; simpl in IHp;
+  unfold "<=", "?=", "?="%positive in *; simpl; auto.
+  (* the final case *)
+  rewrite Pos.compare_cont_spec in *; destruct (p0 ?= p)%positive; simpl; auto.
 Qed.
 
-Lemma valid_cp_encoding_is_not_nil:
-  forall cp s, _encode_codepoint cp = Some s -> 1 <= Z.of_nat (length s) <= 4.
+Lemma lor_bounds:
+  forall a b,
+  0 <= a ->
+  0 <= b ->
+  a <= Z.lor a b <= a + b.
 Proof.
-  intros cp s cp_eq.
-  unfold _encode_codepoint in cp_eq.
-  destruct (Z_lt_dec cp 0). discriminate.
-  destruct (Z_le_dec cp U+"7F"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
-  destruct (Z_le_dec cp U+"7FF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
-  destruct (Z_le_dec cp U+"FFFF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
-  destruct (Z_le_dec cp U+"10FFFF"). injection cp_eq; intros s_def; rewrite <-s_def; simpl; omega.
-  discriminate.
+  intros a b a_bound b_bound.
+  (* clears the easy cases *)
+  destruct a as [|p|p], b as [|q|q]; simpl; try omega;
+  assert (Z.neg p < 0) as np_is_neg by apply Zlt_neg_0;
+  assert (Z.neg q < 0) as nq_is_neg by apply Zlt_neg_0; try omega.
+  clear a_bound b_bound np_is_neg nq_is_neg; generalize q; clear q.
+  (* comparison lemmas *)
+  assert (forall c, Pos.switch_Eq Eq c = c) as switch_eq_eq by
+    (destruct c; auto).
+  assert (forall p' c, Pos.compare_cont p' p' c = c) as p_p_keeps by
+    (induction p'; simpl; auto).
+  assert (forall p' c, Pos.compare_cont p' (Pos.succ p') c = Lt) as p_lt_succ by
+    (induction p'; simpl; auto).
+  (* now the main induction *)
+  induction p; destruct q; simpl; try specialize IHp with (q := q);
+  (* cleans up the easy cases *)
+  try apply IHp; try omega;
+  unfold "<=", "?=", "?="%positive in *; simpl; 
+  repeat rewrite p_p_keeps; repeat rewrite p_lt_succ; 
+  try (split; discriminate); split; try apply IHp.
+  (* now the two hardest inequalities remain *)
+  + repeat rewrite Pos.add_carry_spec in *; repeat rewrite Pos.compare_cont_spec in *;
+    repeat rewrite Pos.compare_succ_r in *.
+    remember (Pos.lor p q ?= p + q)%positive as c.
+    repeat rewrite switch_eq_eq in *; destruct c; simpl; try discriminate.
+    apply IHp.
+  + repeat rewrite Pos.compare_cont_spec in *.
+    remember (p ?= Pos.lor p q)%positive as c.
+    repeat rewrite switch_eq_eq in *; destruct c; simpl; try discriminate.
+    apply IHp.
+Qed.
+
+Lemma lor_acc_lo_bits_bounds:
+  forall acc acc_lo acc_hi a n,
+  0 <= acc_lo ->
+  acc_lo <= acc_hi ->
+  acc_lo <= acc <= acc_hi ->
+  0 <= n < 8 ->
+  Z.shiftl acc_lo n <=
+  Z.lor (Z.shiftl acc n) (_get_lo_bits a n) <
+  (Z.shiftl acc_hi n) + (Z.shiftl 1 n).
+Proof.
+  (* intros *)
+  intros acc acc_lo acc_hi a n.
+  intros acc_lo_bound acc_hi_bounds acc_bounds n_bounds.
+  (* bounds _get_lo_bits *)
+  assert (0 <= _get_lo_bits a n <= Z.shiftl 1 n - 1) as get_lo_bits_bounds.
+  {
+    unfold _get_lo_bits.
+    rewrite Z.land_comm.
+    apply land_bounds.
+    + rewrite Z.shiftl_1_l.
+      cut (0 < 2 ^ n). omega.
+      apply Z.pow_pos_nonneg; omega.
+    + apply N2Z.is_nonneg.
+  }
+  (* bounds the logical OR *)
+  assert (Z.shiftl acc n <=
+          Z.lor (Z.shiftl acc n) (_get_lo_bits a n) <=
+          Z.shiftl acc n + _get_lo_bits a n) as acc_lor_lo_bounds.
+  {
+    apply lor_bounds.
+    + rewrite Z.shiftl_mul_pow2, <-Zmult_0_r with (n := 0) by omega.
+      apply Zmult_le_compat; try omega.
+      apply Z.pow_nonneg; omega.
+    + omega.
+  }
+  (* bounds the shifted accumulator *)
+  assert (0 <= 2^n) as two_to_n_nonneg by (apply Z.pow_nonneg; omega).
+  assert (Z.shiftl acc_lo n <= Z.shiftl acc n <= Z.shiftl acc_hi n) as shifted_acc_bounds.
+  {
+    repeat rewrite Z.shiftl_mul_pow2 by omega.
+    split; apply Zmult_le_compat; omega.
+  }
+  (* finally omega has all the info it needs *)
+  omega.
+Qed.
+
+
+(** Unicode encoding/decoding theorems **)
+
+Inductive is_valid_unicode: list Z -> Prop :=
+  | ivu_empty: is_valid_unicode nil
+  | ivu_cons: 
+      forall c l, (0 <= c < U+"D800" \/ U+"DFFF" < c <= U+"10FFFF") ->
+      is_valid_unicode l -> is_valid_unicode (c :: l).
+
+Lemma valid_cp_is_encoded:
+  forall a, (0 <= a < U+"D800" \/ U+"DFFF" < a <= U+"10FFFF") <->
+  exists s, _encode_codepoint a = Some s.
+Proof.
+  assert (forall t:string, exists s, Some t = Some s) as ex_eq by (intros; exists t; auto).
+  Ltac oor_tactic := unfold "U+" in *; simpl in *; split; [intros; omega | intros [s Habs]; discriminate].
+  Ltac ir_tactic := unfold "U+" in *; simpl in *; split; [intros | intros; omega].
+  intros a; unfold _encode_codepoint.
+  destruct (Z_lt_dec a 0). oor_tactic.
+  destruct (Z_le_dec a U+"7F"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"7FF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"D7FF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"DFFF"). oor_tactic.
+  destruct (Z_le_dec a U+"FFFF"). ir_tactic; apply ex_eq.
+  destruct (Z_le_dec a U+"10FFFF"). ir_tactic; apply ex_eq.
+  oor_tactic.
 Qed.
 
 Theorem valid_unicode_is_encoded:
   forall l, is_valid_unicode l <-> exists s, utf8_encode l = Some s.
 Proof.
-  split.
-  {
-    intros ivu_l.
-    induction ivu_l.
-    + exists ""; auto.
-    + destruct IHivu_l as [s' l_enc_eq].
-      assert (exists s'', _encode_codepoint c = Some s'') as [s'' c_enc_eq]
-        by (apply valid_cp_is_encoded; auto).
-      simpl; rewrite c_enc_eq, l_enc_eq.
-      exists (s'' ++ s'); auto.
-  }
-  {
-    induction l.
-    + constructor.
-    + intros [s a_l_enc_eq]; constructor.
-      - simpl utf8_encode in a_l_enc_eq.
-        apply valid_cp_is_encoded.
-        destruct (_encode_codepoint a).
-        * exists s0; auto.
-        * discriminate.
-      - apply IHl.
-        simpl utf8_encode in a_l_enc_eq.
-        destruct (utf8_encode l).
-        * exists s0; auto.
-        * destruct (_encode_codepoint a); discriminate.
-  }
+  induction l.
+  + simpl; split; intros; [exists ""; auto | apply ivu_empty].
+  + unfold utf8_encode; fold utf8_encode; split.
+    - intros ivu_a_l; inversion ivu_a_l as [|a' l' a_bounds ivu_l].
+      rewrite IHl in ivu_l; destruct ivu_l as [s' l_enc_eq].
+      rewrite valid_cp_is_encoded in a_bounds; destruct a_bounds as [s'' a_enc_eq].
+      rewrite l_enc_eq, a_enc_eq; exists (s'' ++ s'); auto.
+    - remember (_encode_codepoint a) as ecp_a.
+      destruct ecp_a, (utf8_encode l); try (intros [s' Habs]; discriminate).
+      intros _; apply ivu_cons.
+      * rewrite valid_cp_is_encoded, <-Heqecp_a; exists s; auto.
+      * rewrite IHl; exists s0; auto.
 Qed.
 
-Lemma aux_enc_cp_bound:
-  forall cp hi lo off,
-  cp >= 0 ->
-  off >= 0 ->
-  hi - lo + 1 > 0 ->
-  off + Z.shiftl 1 (hi - lo + 1) < 256 ->
-  off <= Z_of_N (N_of_ascii (_aux_enc_cp_byte cp hi lo off)) < off + Z.shiftl 1 (hi - lo + 1).
+Lemma aux_decode_higher_phase_non_empty:
+  forall s acc n bound,
+  _utf8_decode_aux s acc (S n) bound <> Some [].
 Proof.
-  intros; unfold _aux_enc_cp_byte.
-  assert (Z.shiftr cp lo >= 0) by (apply shiftr_ge_0; auto).
-  assert (Z.shiftl 1 (hi - lo + 1) > 0) by (apply shiftl_pos; omega).
-  assert (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1) <= (Z.shiftl 1 (hi - lo + 1) - 1))
-    by (rewrite Z.land_comm; apply land_bounds; omega).
-  assert (off <= Z.lor off (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1)))
-    by (apply lor_bounds; try omega; apply land_bounds; omega).
-  assert (Z.lor off (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1)) <
-          off + Z.shiftl 1 (hi - lo + 1)).
-  {
-    apply Z.le_lt_trans with (m := off + (Z.land (Z.shiftr cp lo) (Z.shiftl 1 (hi - lo + 1) - 1))).
-    + apply lor_bounds; try omega.
-      apply land_bounds; omega.
-    + omega.
-  }
-  rewrite N_ascii_embedding, Z2N.id.
-  + omega.
-  + omega.
-  + rewrite N2Z.inj_lt, Z2N.id by omega; simpl; omega.
-Qed. 
-
-Lemma string_cat_empty_r: forall s, s ++ "" = s.
-Proof.
-  induction s.
-  + auto.
-  + simpl; rewrite IHs; auto.
-Qed.
-
-Lemma string_cat_len: forall s s', (length (s ++ s') >= length s')%nat.
-Proof.
-  induction s.
-  + auto.
-  + intros; simpl; cut (length (s ++ s') >= length s')%nat; try omega.
-    apply IHs.
-Qed.
-
-Fixpoint skipn s n {struct n} :=
-  match n, s with
-  | S m, String c s' => skipn s' m
-  | _, _ => s
-  end.
-
-Lemma skipn_prefix: forall s s', skipn (s ++ s') (length s) = s'.
-Proof.
-  intros; induction s; auto.
-Qed.
-
-Lemma skipn_length: forall s n, (length (skipn s n) <= length s)%nat.
-Proof.
-  induction s; intros; destruct n; simpl; auto.
-Qed.
-
-Lemma skipn_length_eq:
-  forall n s,
-  (n <= length s)%nat ->
-  length (skipn s n) = (length s - n)%nat.
-Proof.
+  intros s acc n bound.
+  generalize s acc; clear s acc.
   induction n.
-  + intros; simpl; omega.
   + destruct s.
-    - auto.
-    - intros; simpl in *; apply IHn; omega.
+    - intros; case acc; discriminate.
+    - unfold _utf8_decode_aux; fold _utf8_decode_aux; intros.
+      remember (Z.lor (Z.shiftl acc 6) (_get_lo_bits a 6)) as cp.
+      destruct (_utf8_decode_aux s 0 0 0), (Z_ge_dec cp bound),
+               (Z_le_dec cp U+("D7FF")), (Z_le_dec cp U+("DFFF")),
+               acc, a;
+      destruct b5, b6; discriminate.
+  + destruct s.
+    - intros; case acc; discriminate.
+    - unfold _utf8_decode_aux; fold _utf8_decode_aux; intros.
+      destruct acc, a; destruct b5, b6; try discriminate; apply IHn.
 Qed.
 
-Lemma decode_codepoint_too_short:
-  forall n acc s,
-  (length s < n)%nat ->
-  _decode_codepoint acc s n = None.
+Lemma encode_codepoint_non_empty:
+  forall cp, _encode_codepoint cp <> Some "".
 Proof.
-  induction n.
-  + intros; omega.
-  + intros acc s len_bound.
+  intros; unfold _encode_codepoint.
+  destruct (Z_lt_dec cp 0). discriminate.
+  destruct (Z_le_dec cp U+"7F"). discriminate.
+  destruct (Z_le_dec cp U+"7FF"). discriminate.
+  destruct (Z_le_dec cp U+"D7FF"). discriminate.
+  destruct (Z_le_dec cp U+"DFFF"). discriminate.
+  destruct (Z_le_dec cp U+"FFFF"). discriminate.
+  destruct (Z_le_dec cp U+"10FFFF"). discriminate.
+  discriminate.
+Qed.
+
+Lemma empty_encodes_empty:
+  forall l, utf8_encode l = Some "" -> l = [].
+Proof.
+  destruct l as [|cp l]; unfold utf8_encode; fold utf8_encode.
+  + auto.
+  + remember (_encode_codepoint cp) as enc_cp.
+    destruct (utf8_encode l), enc_cp as [s'|]; try discriminate.
+    destruct s'.
+    - assert (_encode_codepoint cp <> Some "") as enc_cp_ne by apply encode_codepoint_non_empty.
+      rewrite Heqenc_cp in enc_cp_ne; exfalso; apply enc_cp_ne; auto.
+    - discriminate.
+Qed.
+
+Lemma empty_decodes_empty:
+  forall s, utf8_decode s = Some [] -> s = "".
+Proof.
+  destruct s; unfold utf8_decode.
+  + auto.
+  + simpl; destruct (_utf8_decode_aux s 0 0 0), a; destruct b2, b3, b4, b5, b6;
+    try discriminate; intros Habs; exfalso;
+    generalize Habs; apply aux_decode_higher_phase_non_empty.
+Qed.
+
+Lemma decode_lt_80:
+  forall a s cp l,
+  Z.of_N (N_of_ascii a) < U+"80" ->
+  utf8_decode (String a s) = Some (cp :: l) ->
+  0 <= cp <= U+"7F".
+Proof.
+  intros a s cp l a_bounds; unfold utf8_decode; simpl.
+  destruct a, (_utf8_decode_aux s 0 0 0);
+  destruct b, b0, b1, b2, b3, b4, b5, b6; simpl; try discriminate;
+  unfold "U+" in *; simpl in *; try omega; intros l_eq;
+  injection l_eq; intros; omega.
+Qed.
+
+Lemma decode_ge_c0_lt_e0:
+  forall a s cp l,
+  U+"C0" <= Z.of_N (N_of_ascii a) < U+"E0" ->
+  utf8_decode (String a s) = Some (cp :: l) ->
+  U+"80" <= cp <= U+"7FF".
+Proof.
+  assert (forall s acc cp l,
+          0 <= acc < 32 ->
+          _utf8_decode_aux s acc 1 128 = Some (cp :: l) ->
+          128 <= cp <= 2047) as dec_bounds.
+  {
+    intros s acc cp l acc_bounds.
     destruct s.
-    - auto.
-    - unfold _decode_codepoint; fold _decode_codepoint.
-      assert (_decode_codepoint (Z.shiftl acc 6 + _get_lo_bits a 6) s n = None) as dc_eq
-        by (apply IHn; simpl in len_bound; omega).
-      rewrite dc_eq; destruct a; destruct b5, b6; auto.
-Qed.
-
-Lemma decode_codepoint_ignores_tail:
-  forall n s s' s'' acc acc' acc'' t' t'',
-  length s = n ->
-  _decode_codepoint acc (s ++ s') n = Some (acc', t') ->
-  _decode_codepoint acc (s ++ s'') n = Some (acc'', t'') ->
-  acc' = acc''.
-Proof.
-  induction n.
-  + simpl; intros s s' s'' acc acc' acc'' t' t'' _ eq_1 eq_2.
-    inversion eq_1; inversion eq_2; subst acc; auto.
-  + intros s s' s'' acc acc' acc'' t' t'' len_eq.
-    destruct s.
-    - simpl in len_eq; discriminate.
-    - simpl; destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6;
-        simpl in *; try discriminate; apply IHn; omega.
-Qed.
-
-Lemma decode_codepoint_suffix_is_not_worse:
-  forall n acc s t,
-  length s = n ->
-  _decode_codepoint acc (s ++ t) n = None ->
-  _decode_codepoint acc s n = None.
-Proof.
-  induction n.
-  + simpl; discriminate.
-  + unfold _decode_codepoint; fold _decode_codepoint; intros acc s t len_eq.
-    destruct s; auto.
-    simpl in len_eq.
-    destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6;
-      simpl; auto; apply IHn; omega.
-Qed.
-
-Lemma decode_codepoint_leaves_tail:
-  forall n acc s acc' s',
-  _decode_codepoint acc s n = Some (acc', s') ->
-  skipn s n = s'.
-Proof.
-  induction n.
-  + intros acc s acc' s' dc_eq; inversion dc_eq; subst s; auto.
-  + intros acc s acc' s' dc_eq.
-    unfold _decode_codepoint in dc_eq; fold _decode_codepoint in dc_eq.
-    destruct s. discriminate.
-    remember (_decode_codepoint (Z.shiftl acc 6 + _get_lo_bits a 6) s n) as inner_dc.
-    destruct inner_dc.
-    - destruct p as [acc'' s''].
-      assert (skipn s n = s')%nat.
-      {
-        apply IHn with (acc := Z.shiftl acc 6 + _get_lo_bits a 6) (acc' := acc').
-        destruct a; destruct b5, b6; try discriminate.
-        inversion dc_eq; subst s'; subst acc'.
-        auto.
-      }
-      auto.
-    - destruct a; destruct b5, b6; discriminate.
-Qed.
-
-Lemma utf8_decode_aux_extra_dummy:
-  forall n s,
-  (n >= length s)%nat ->
-  _utf8_decode_aux s n = utf8_decode s.
-Proof.
-  cut (forall n m s,
-       (n >= m)%nat ->
-       (m >= length s)%nat ->
-       _utf8_decode_aux s m = utf8_decode s).
-  {
-    intros H n s; apply H with (n := n); auto.
+    + case acc; discriminate.
+    + unfold _utf8_decode_aux; fold _utf8_decode_aux.
+      remember (Z.lor (Z.shiftl acc 6) (_get_lo_bits a 6)) as cp'.
+      destruct a, (_utf8_decode_aux s 0 0 0); destruct b5, b6; try discriminate;
+      destruct (Z_ge_dec cp' 128); try (destruct acc; discriminate).
+      assert (Z.shiftl 0 6 <=
+                Z.lor (Z.shiftl acc 6) (_get_lo_bits (Ascii b b0 b1 b2 b3 b4 false true) 6) <
+                (Z.shiftl 31 6) + (Z.shiftl 1 6)) as cp_bounds.
+      apply lor_acc_lo_bits_bounds; omega.
+      rewrite <-Heqcp' in cp_bounds.
+      destruct (Z_le_dec cp' U+("D7FF")), (Z_le_dec cp' U+("DFFF"));
+      unfold "U+" in *; simpl in *; try discriminate; intros Heq_cp_l; try omega.
+      destruct acc; injection Heq_cp_l; intros; omega.
   }
-  unfold utf8_decode, _utf8_decode_aux.
-  induction n.
-  + destruct s, m; simpl; auto; intros; omega.
-  + destruct m, s; simpl; auto; intros; try omega.
-    case (_read_head_byte a); auto.
-    destruct p; remember (_decode_codepoint z s n0) as dcp_z.
-    destruct dcp_z; auto; destruct p; intros.
-    fold _utf8_decode_aux in *.
-    assert (length s0 <= length s)%nat.
-    {
-      rewrite <-decode_codepoint_leaves_tail 
-        with (s' := s0) (n := n0) (acc := z) (s := s) (acc' := z0) by auto.
-      apply skipn_length.
-    }
-    rewrite IHn, IHn with (m := length s); auto; omega.
+  intros a s cp l a_bounds; unfold utf8_decode; simpl.
+  destruct a, (_utf8_decode_aux s 0 0 0);
+  destruct b, b0, b1, b2, b3, b4, b5, b6; simpl; try discriminate;
+  unfold _get_lo_bits; unfold "U+" in *; simpl in *; try omega;
+  apply dec_bounds; omega.
 Qed.
 
-Lemma prefix_decoding_works:
-  forall a l s s',
-  utf8_decode s = Some (a :: nil) ->
-  utf8_decode s' = Some l ->
-  utf8_decode (s ++ s') = Some (a :: l).
-Proof.
-  intros a l s s' s_dec_eq s'_dec_eq.
-  unfold utf8_decode, _utf8_decode_aux in s_dec_eq.
-  (* removing s = nil *)
-  destruct s as [|c t]; simpl in *; try discriminate. 
-  (* removing _read_head_byte failure *)
-  remember (_read_head_byte c) as rhb_res.
-  destruct rhb_res; simpl in *; fold _utf8_decode_aux in *; try discriminate.
-  destruct p as [acc n].
-  (* removing _decode_codepoint failure *)
-  remember (_decode_codepoint acc t n) as dc_result.
-  destruct dc_result; try discriminate.
-  destruct p as [acc'' s''].
-  (* removing _utf8_decode_aux failure *)
-  remember (_utf8_decode_aux s'' (length t)) as u8d_res.
-  destruct u8d_res; try discriminate.
-  (* starts unfolding here *)
-  unfold utf8_decode, _utf8_decode_aux; simpl.
-  rewrite <-Heqrhb_res.
-  fold _utf8_decode_aux.
-  (* l0 is nil, removes a *)
-  destruct l0; try discriminate.
-  inversion s_dec_eq; subst a; clear s_dec_eq.
-  (* s'' is "" *)
-  assert (s'' = "").
-  {
-    unfold _utf8_decode_aux in *.
-    destruct s''; destruct (length t); auto; try discriminate.
-    fold _utf8_decode_aux in *.
-    destruct (_read_head_byte a); try discriminate.
-    destruct p; destruct (_decode_codepoint z s'' n1); try discriminate.
-    destruct p; destruct (_utf8_decode_aux s n0); discriminate.
-  }
-  subst s''.
-  (* length t = n *)
-  assert (length t = n) as length_t_eq.
-  {
-    destruct (lt_dec n (length t)).
-    {
-      absurd (length "" > 0)%nat.
-      + simpl; omega.
-      + rewrite <-decode_codepoint_leaves_tail 
-          with (n := n) (acc := acc) (s := t) (acc' := acc'') (s' := "")
-          by auto.
-        cut (length (skipn t n) = (length t - n)%nat); try omega.
-        apply skipn_length_eq; omega.
-    }
-    destruct (lt_dec (length t) n).
-    {
-      absurd (Some (acc'', "") = None).
-      + discriminate.
-      + rewrite <-decode_codepoint_too_short 
-          with (n := n) (acc := acc) (s := t); auto.
-    }
-    omega.
-  }
-  (* the acc values should match *)
-  assert (_decode_codepoint acc (t ++ s') n = Some (acc'', s')) as decode_eq.
-  {
-    remember (_decode_codepoint acc (t ++ s') n) as dcl_res.
-    destruct dcl_res.
-    + destruct p as [acc''' s'''].
-      assert (acc''' = acc'').
-      {
-        apply decode_codepoint_ignores_tail 
-          with (n := n) (s := t) (s' := s') (s'' := "") (acc := acc) (t' := s''') (t'' := "").
-        + auto.
-        + auto.
-        + rewrite string_cat_empty_r; auto.
-      }
-      assert (s''' = s').
-      {
-        rewrite <-skipn_prefix with (s := t) (s' := s').
-        symmetry; apply decode_codepoint_leaves_tail with (acc := acc) (acc' := acc''').
-        rewrite length_t_eq; auto.
-      }
-      subst acc''' s'''; auto.
-    + rewrite decode_codepoint_suffix_is_not_worse with (t := s') in Heqdc_result.
-      - discriminate.
-      - auto.
-      - rewrite Heqdcl_res; auto.
-  }
-  rewrite decode_eq.
-  (* the decoded values are the same *)
-  assert (_utf8_decode_aux s' (length (t ++ s')) = Some l) as decode_eq_2.
-  {
-    rewrite utf8_decode_aux_extra_dummy, s'_dec_eq.
-    + auto.
-    + apply string_cat_len.
-  }
-  rewrite decode_eq_2.
-  auto.
-Qed.
-
-Lemma cp_enc_dec_eq:
-  forall cp,
-  is_valid_unicode (cp :: nil) ->
-  exists s, _encode_codepoint cp = Some s /\
-  utf8_decode s = Some (cp :: nil).
-Proof.
-  intros cp ivu_cp.
-  remember [cp] as l; destruct ivu_cp as [|c l]; try discriminate.
-  assert (hd c (c :: l) = hd c ([cp])) as cp_eq by (rewrite Heql; auto).
-  assert (tl (c :: l) = tl [cp]) as l_eq by (rewrite Heql; auto).
-  simpl in cp_eq; simpl in l_eq; subst c l; clear Heql ivu_cp.
-  assert (exists s, _encode_codepoint cp = Some s) as [s cp_enc_eq]
-    by (apply valid_cp_is_encoded; auto).
-  exists s; split; auto.
-  destruct (Z_lt_dec cp 0); try omega.
-  destruct (Z_le_dec cp U+"7F").
-  {
-    admit. (** FIXME **)
-  }
-  admit. (** FIXME **)
-Qed.
-
-Theorem decode_enc_eq:
-  forall l,
-  is_valid_unicode l ->
-  exists s, utf8_encode l = Some s /\ utf8_decode s = Some l.
+Theorem decoded_iff_encoded:
+  forall l s, utf8_encode l = Some s <-> utf8_decode s = Some l.
 Proof.
   induction l.
-  + intros; exists ""; auto.
-  + intros ivu_a_l; inversion ivu_a_l.
-    assert (exists s, utf8_encode l = Some s /\ utf8_decode s = Some l) as
-      [s [enc_eq dec_eq]] by (apply IHl; auto).
-    assert (exists s, _encode_codepoint a = Some s /\ utf8_decode s = Some (a :: nil)) as
-      [sa [a_enc_eq a_dec_eq]] by (apply cp_enc_dec_eq; constructor; auto; constructor).
-    exists (sa ++ s); simpl.
-    rewrite enc_eq, a_enc_eq; split; auto.
-    apply prefix_decoding_works; auto.
-Qed.
+  + intros; simpl; split; unfold utf8_decode.
+    - intros Heq; injection Heq; intros Heq'; rewrite <-Heq'; auto.
+    - destruct s.
+      * auto.
+      * intros dec_eq; rewrite empty_decodes_empty with (s := String a s); auto.
+  + 
+Admitted. (** FIXME **)
