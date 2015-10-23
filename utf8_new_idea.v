@@ -241,7 +241,37 @@ Lemma lor_bounds:
   0 <= b ->
   a <= Z.lor a b <= a + b.
 Proof.
-Admitted. (** FIXME **)
+  intros a b a_bound b_bound.
+  (* clears the easy cases *)
+  destruct a as [|p|p], b as [|q|q]; simpl; try omega;
+  assert (Z.neg p < 0) as np_is_neg by apply Zlt_neg_0;
+  assert (Z.neg q < 0) as nq_is_neg by apply Zlt_neg_0; try omega.
+  clear a_bound b_bound np_is_neg nq_is_neg; generalize q; clear q.
+  (* comparison lemmas *)
+  assert (forall c, Pos.switch_Eq Eq c = c) as switch_eq_eq by
+    (destruct c; auto).
+  assert (forall p' c, Pos.compare_cont p' p' c = c) as p_p_keeps by
+    (induction p'; simpl; auto).
+  assert (forall p' c, Pos.compare_cont p' (Pos.succ p') c = Lt) as p_lt_succ by
+    (induction p'; simpl; auto).
+  (* now the main induction *)
+  induction p; destruct q; simpl; try specialize IHp with (q := q);
+  (* cleans up the easy cases *)
+  try apply IHp; try omega;
+  unfold "<=", "?=", "?="%positive in *; simpl; 
+  repeat rewrite p_p_keeps; repeat rewrite p_lt_succ; 
+  try (split; discriminate); split; try apply IHp.
+  (* now the two hardest inequalities remain *)
+  + repeat rewrite Pos.add_carry_spec in *; repeat rewrite Pos.compare_cont_spec in *;
+    repeat rewrite Pos.compare_succ_r in *.
+    remember (Pos.lor p q ?= p + q)%positive as c.
+    repeat rewrite switch_eq_eq in *; destruct c; simpl; try discriminate.
+    apply IHp.
+  + repeat rewrite Pos.compare_cont_spec in *.
+    remember (p ?= Pos.lor p q)%positive as c.
+    repeat rewrite switch_eq_eq in *; destruct c; simpl; try discriminate.
+    apply IHp.
+Qed.
 
 Lemma lor_acc_lo_bits_bounds:
   forall acc acc_lo acc_hi a n,
@@ -354,6 +384,33 @@ Proof.
       destruct acc, a; destruct b5, b6; try discriminate; apply IHn.
 Qed.
 
+Lemma encode_codepoint_non_empty:
+  forall cp, _encode_codepoint cp <> Some "".
+Proof.
+  intros; unfold _encode_codepoint.
+  destruct (Z_lt_dec cp 0). discriminate.
+  destruct (Z_le_dec cp U+"7F"). discriminate.
+  destruct (Z_le_dec cp U+"7FF"). discriminate.
+  destruct (Z_le_dec cp U+"D7FF"). discriminate.
+  destruct (Z_le_dec cp U+"DFFF"). discriminate.
+  destruct (Z_le_dec cp U+"FFFF"). discriminate.
+  destruct (Z_le_dec cp U+"10FFFF"). discriminate.
+  discriminate.
+Qed.
+
+Lemma empty_encodes_empty:
+  forall l, utf8_encode l = Some "" -> l = [].
+Proof.
+  destruct l as [|cp l]; unfold utf8_encode; fold utf8_encode.
+  + auto.
+  + remember (_encode_codepoint cp) as enc_cp.
+    destruct (utf8_encode l), enc_cp as [s'|]; try discriminate.
+    destruct s'.
+    - assert (_encode_codepoint cp <> Some "") as enc_cp_ne by apply encode_codepoint_non_empty.
+      rewrite Heqenc_cp in enc_cp_ne; exfalso; apply enc_cp_ne; auto.
+    - discriminate.
+Qed.
+
 Lemma empty_decodes_empty:
   forall s, utf8_decode s = Some [] -> s = "".
 Proof.
@@ -420,7 +477,5 @@ Proof.
     - destruct s.
       * auto.
       * intros dec_eq; rewrite empty_decodes_empty with (s := String a s); auto.
-  + unfold utf8_encode, utf8_decode, _encode_codepoint, _utf8_decode_aux.
-    fold _utf8_decode_aux; fold utf8_decode; fold utf8_encode.
-    destruct (Z_lt_dec a 0).
+  + 
 Admitted. (** FIXME **)
