@@ -477,5 +477,39 @@ Proof.
     - destruct s.
       * auto.
       * intros dec_eq; rewrite empty_decodes_empty with (s := String a s); auto.
-  + 
+  + intros; split.
+    - unfold utf8_encode, _encode_codepoint at 1; fold utf8_encode.
+      destruct (Z_lt_dec a 0).
+      {
+        discriminate.
+      }
+      destruct (Z_le_dec a U+("7F")).
+      {
+        destruct (utf8_encode l) as [s'|]; try discriminate.
+        intros s_eq; injection s_eq; intros s_eq'.
+        assert (utf8_decode s' = Some l) as s_enc' by (apply IHl; auto).
+        unfold "U+" in *.
+        rewrite <-s_eq'; unfold utf8_decode in *; simpl in *.
+        remember (ascii_of_N (Z.to_N a)) as ascii_a.
+        assert (Z.of_N (N_of_ascii ascii_a) = a) as a_ascii_eq
+          by (rewrite Heqascii_a, N_ascii_embedding, Z2N.id
+              by (auto; try (apply N2Z.inj_lt; simpl; rewrite Z2N.id); omega);
+              auto).
+        unfold "U+" in *; simpl in *.
+        destruct ascii_a; destruct b, b0, b1, b2, b3, b4, b5, b6; simpl in *; try omega;
+        rewrite s_enc', a_ascii_eq; auto.
+      }
+      admit. (** FIXME **)
+    - unfold utf8_decode; destruct s as [|c s']; simpl; try discriminate.
+      remember (Z.of_N (N_of_ascii c)) as ascii_c.
+      destruct (Z_lt_dec ascii_c 0).
+      {
+        rewrite Heqascii_c in *.
+        assert (0 <= Z.of_N (N_of_ascii c)) by apply N2Z.is_nonneg.
+        omega.
+      }
+      destruct (Z_lt_dec ascii_c U+"80").
+      {
+        destruct ascii_c.
+  
 Admitted. (** FIXME **)
