@@ -468,48 +468,90 @@ Proof.
   apply dec_bounds; omega.
 Qed.
 
+Lemma dec_lemma_1:
+  forall cp s l,
+  0 <= cp <= U+"7F" ->
+  utf8_decode s = Some l ->
+  utf8_decode (String (ascii_of_N (Z.to_N cp)) s) = Some (cp :: l).
+Proof.
+  intros cp s l cp_bounds dec_eq.
+  unfold utf8_decode in *; unfold _utf8_decode_aux; fold _utf8_decode_aux.
+  unfold "U+" in *; simpl in *; rewrite dec_eq.
+  remember (ascii_of_N (Z.to_N cp)) as c.
+  remember (Z.of_N (N_of_ascii c)) as cp'.
+  assert (cp' = cp) as cp_eq.
+  {
+    rewrite Heqcp', Heqc.
+    rewrite N_ascii_embedding by (rewrite <-N2Z.id; apply Z2N.inj_lt; simpl; omega).
+    rewrite Z2N.id by omega.
+    auto.
+  }
+  rewrite cp_eq.
+  destruct c; destruct b, b0, b1, b2, b3, b4, b5, b6; simpl in *;
+  auto; omega.
+Qed.
+
+Lemma dec_lemma_2:
+  forall cp s l,
+  U+"80" <= cp <= U+"7FF" ->
+  utf8_decode s = Some l ->
+  utf8_decode (String (_aux_enc_cp_byte cp 10 6 U+("C0"))
+               (String (_aux_enc_cp_byte cp 5 0 U+("80")) s)) = Some (cp :: l).
+Proof.
+Admitted. (** FIXME **)
+
+Lemma dec_lemma_3:
+  forall cp s l,
+  U+"800" <= cp <= U+"D7FF" \/ U+"E000" <= cp <= U+"FFFF" ->
+  utf8_decode s = Some l ->
+  utf8_decode (String (_aux_enc_cp_byte cp 15 12 U+("E0"))
+               (String (_aux_enc_cp_byte cp 11 6 U+("80"))
+                (String (_aux_enc_cp_byte cp 5 0 U+("80")) s))) = Some (cp :: l).
+Proof.
+Admitted. (** FIXME **)
+
+Lemma dec_lemma_4:
+  forall cp s l,
+  U+"10000" <= cp <= U+"10FFFF" ->
+  utf8_decode s = Some l ->
+  utf8_decode (String (_aux_enc_cp_byte cp 20 18 U+"F0")
+               (String (_aux_enc_cp_byte cp 17 12 U+"80")
+                (String (_aux_enc_cp_byte cp 11 6 U+"80")
+                 (String (_aux_enc_cp_byte cp 5 0 U+"80") s)))) = Some (cp :: l).
+Proof.
+Admitted. (** FIXME **)
+
 Theorem decoded_iff_encoded:
   forall l s, utf8_encode l = Some s <-> utf8_decode s = Some l.
 Proof.
-  induction l.
+  induction l as [|cp l].
   + intros; simpl; split; unfold utf8_decode.
     - intros Heq; injection Heq; intros Heq'; rewrite <-Heq'; auto.
     - destruct s.
       * auto.
       * intros dec_eq; rewrite empty_decodes_empty with (s := String a s); auto.
   + intros; split.
-    - unfold utf8_encode, _encode_codepoint at 1; fold utf8_encode.
-      destruct (Z_lt_dec a 0).
-      {
+    - unfold utf8_encode; fold utf8_encode.
+      destruct (utf8_encode l) as [s'|]; try (destruct (_encode_codepoint cp); discriminate).
+      unfold _encode_codepoint.
+      specialize (IHl s'); destruct IHl as [dec_eq' _].
+      Ltac valid_dec dec_lemma :=
+        intros enc_eq'; injection enc_eq'; intros enc_eq; clear enc_eq';
+        rewrite <-enc_eq; apply dec_lemma; auto; unfold "U+" in *; simpl in *; omega.
+      destruct (Z_lt_dec cp 0).
         discriminate.
-      }
-      destruct (Z_le_dec a U+("7F")).
-      {
-        destruct (utf8_encode l) as [s'|]; try discriminate.
-        intros s_eq; injection s_eq; intros s_eq'.
-        assert (utf8_decode s' = Some l) as s_enc' by (apply IHl; auto).
-        unfold "U+" in *.
-        rewrite <-s_eq'; unfold utf8_decode in *; simpl in *.
-        remember (ascii_of_N (Z.to_N a)) as ascii_a.
-        assert (Z.of_N (N_of_ascii ascii_a) = a) as a_ascii_eq
-          by (rewrite Heqascii_a, N_ascii_embedding, Z2N.id
-              by (auto; try (apply N2Z.inj_lt; simpl; rewrite Z2N.id); omega);
-              auto).
-        unfold "U+" in *; simpl in *.
-        destruct ascii_a; destruct b, b0, b1, b2, b3, b4, b5, b6; simpl in *; try omega;
-        rewrite s_enc', a_ascii_eq; auto.
-      }
-      admit. (** FIXME **)
-    - unfold utf8_decode; destruct s as [|c s']; simpl; try discriminate.
-      remember (Z.of_N (N_of_ascii c)) as ascii_c.
-      destruct (Z_lt_dec ascii_c 0).
-      {
-        rewrite Heqascii_c in *.
-        assert (0 <= Z.of_N (N_of_ascii c)) by apply N2Z.is_nonneg.
-        omega.
-      }
-      destruct (Z_lt_dec ascii_c U+"80").
-      {
-        destruct ascii_c.
-  
-Admitted. (** FIXME **)
+      destruct (Z_le_dec cp U+"7F").
+        valid_dec dec_lemma_1.
+      destruct (Z_le_dec cp U+"7FF").
+        valid_dec dec_lemma_2.
+      destruct (Z_le_dec cp U+"D7FF").
+        valid_dec dec_lemma_3.
+      destruct (Z_le_dec cp U+"DFFF").
+        discriminate.
+      destruct (Z_le_dec cp U+"FFFF").
+        valid_dec dec_lemma_3.
+      destruct (Z_le_dec cp U+"10FFFF").
+        valid_dec dec_lemma_4.
+        discriminate.
+    - admit. (** FIXME **)
+Qed.
