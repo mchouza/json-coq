@@ -521,6 +521,88 @@ Lemma dec_lemma_4:
 Proof.
 Admitted. (** FIXME **)
 
+Lemma utf8_decode_aux_1:
+  forall a s cp l,
+  Z.of_N (N_of_ascii a) < U+"80" ->
+  _utf8_decode_aux (String a s) 0 0 0  = Some (cp :: l) ->
+  cp = Z.of_N (N_of_ascii a) /\
+  _utf8_decode_aux s 0 0 0 = Some l.
+Proof.
+  intros a s cp l a_bounds dec_eq.
+  destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6; 
+  simpl in dec_eq; try discriminate;
+  destruct (_utf8_decode_aux s 0 0 0); try discriminate;
+  injection dec_eq; simpl; intros l_eq cp_eq; rewrite l_eq, cp_eq; auto.
+Qed.
+
+Lemma utf8_decode_aux_2:
+  forall a s cp l,
+  U+"C0" <= Z.of_N (N_of_ascii a) < U+"E0" ->
+  _utf8_decode_aux (String a s) 0 0 0  = Some (cp :: l) ->
+  exists b s',
+  cp = (Z.lor (Z.shiftl (_get_lo_bits a 5) 6) (_get_lo_bits b 6)) /\
+  s = String b s' /\
+  _utf8_decode_aux s' 0 0 0 = Some l /\
+  U+"80" <= cp < U+"800" /\
+  U+"C0" <= Z.of_N (N_of_ascii a) < U+"E0" /\
+  U+"80" <= Z.of_N (N_of_ascii b) < U+"C0".
+Proof.
+Admitted. (** FIXME **)
+
+Lemma utf8_decode_aux_3:
+  forall a s cp l,
+  U+"E0" <= Z.of_N (N_of_ascii a) < U+"F0" ->
+  _utf8_decode_aux (String a s) 0 0 0  = Some (cp :: l) ->
+  exists b c s',
+  cp = (Z.lor (Z.shiftl (Z.lor (Z.shiftl (_get_lo_bits a 4) 6) (_get_lo_bits b 6)) 6) (_get_lo_bits c 6)) /\
+  s = String b (String c s') /\
+  _utf8_decode_aux s' 0 0 0 = Some l /\
+  (U+"800" <= cp < U+"D800" \/ U+"E000" <= cp < U+"10000") /\
+  U+"80" <= Z.of_N (N_of_ascii b) < U+"C0" /\
+  U+"80" <= Z.of_N (N_of_ascii c) < U+"C0".
+Proof.
+Admitted.
+
+Lemma enc_lemma_1:
+  forall cp,
+  0 <= cp < U+"80" ->
+  _encode_codepoint cp = Some (String (ascii_of_N (Z.to_N cp)) "").
+Proof.
+  intros cp cp_bounds; unfold _encode_codepoint.
+  destruct (Z_lt_dec cp 0). omega.
+  destruct (Z_le_dec cp U+"7F"). auto.
+  unfold "U+" in *; simpl in *; omega.
+Qed.
+
+Lemma enc_lemma_2:
+  forall cp,
+  U+"80" <= cp < U+"800" ->
+  _encode_codepoint cp = Some (String (_aux_enc_cp_byte cp 10 6 U+("C0"))
+                               (String (_aux_enc_cp_byte cp 5 0 U+("80")) "")).
+Proof.
+Admitted. (** FIXME **)
+
+Lemma aux_enc_hi:
+  forall a b m n off,
+  _aux_enc_cp_byte (Z.lor (Z.shiftl a n) (_get_lo_bits b n)) m n off =
+  _aux_enc_cp_byte a (m - n) 0 off.
+Proof.
+Admitted. (** FIXME **)
+
+Lemma aux_enc_lo:
+  forall a b n off,
+  _aux_enc_cp_byte (Z.lor (Z.shiftl a n) (_get_lo_bits b n)) (n - 1) 0 off =
+  _aux_enc_cp_byte (_get_lo_bits b n) (n - 1) 0 off.
+Proof.
+Admitted. (** FIXME **)
+
+Lemma aux_enc_id:
+  forall a n off,
+  off <= Z.of_N (N_of_ascii a) < off + (Z.shiftl 1 n) ->
+  _aux_enc_cp_byte (_get_lo_bits a n) (n - 1) 0 off = a.
+Proof.
+Admitted.
+
 Theorem decoded_iff_encoded:
   forall l s, utf8_encode l = Some s <-> utf8_decode s = Some l.
 Proof.
@@ -553,5 +635,45 @@ Proof.
       destruct (Z_le_dec cp U+"10FFFF").
         valid_dec dec_lemma_4.
         discriminate.
-    - admit. (** FIXME **)
+    - destruct s as [|a s']; simpl; try discriminate.
+      destruct (Z_lt_dec (Z.of_N (N_of_ascii a)) 0).
+      {
+        assert (0 <= Z.of_N (N_of_ascii a)) by apply N2Z.is_nonneg.
+        omega.
+      }
+      destruct (Z_lt_dec (Z.of_N (N_of_ascii a)) U+"80").
+      {      
+        intros dec_eq.
+        assert (cp = Z.of_N (N_of_ascii a) /\
+                _utf8_decode_aux s' 0 0 0 = Some l) as [cp_eq l_eq]
+          by (apply utf8_decode_aux_1; auto).
+        unfold utf8_decode in *; specialize (IHl s'); rewrite l_eq in IHl.
+        assert (utf8_encode l = Some s') as enc_eq by tauto.
+        rewrite enc_eq, enc_lemma_1, cp_eq by omega.
+        rewrite N2Z.id, ascii_N_embedding; auto.
+      }
+      destruct (Z_le_dec (Z.of_N (N_of_ascii a)) U+"BF").
+      {
+        destruct a; destruct b, b0, b1, b2, b3, b4, b5, b6;
+        unfold "U+" in *; simpl in *; try omega; discriminate.
+      }
+      destruct (Z_le_dec (Z.of_N (N_of_ascii a)) U+"DF").
+      {
+        intros dec_eq.
+        assert (exists b s'',
+                cp = (Z.lor (Z.shiftl (_get_lo_bits a 5) 6)
+                            (_get_lo_bits b 6)) /\
+                s' = String b s'' /\
+                _utf8_decode_aux s'' 0 0 0 = Some l /\
+                U+"80" <= cp < U+"800" /\
+                U+"C0" <= Z.of_N (N_of_ascii a) < U+"E0" /\
+                U+"80" <= Z.of_N (N_of_ascii b) < U+"C0")
+          as (b & s'' & cp_eq & s_eq & l_eq & cp_bounds & a_bounds & b_bounds)
+          by (apply utf8_decode_aux_2; unfold utf8_decode, "U+" in *; simpl in *; auto; omega).
+        unfold utf8_decode in *; specialize (IHl s''); rewrite l_eq in IHl.
+        assert (utf8_encode l = Some s'') as enc_eq by tauto.
+        rewrite enc_eq, enc_lemma_2, cp_eq, s_eq by auto.
+        rewrite aux_enc_hi, aux_enc_lo; repeat rewrite aux_enc_id; auto.
+      }
+      admit. (** FIXME **)
 Qed.
